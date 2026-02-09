@@ -286,11 +286,21 @@ def index():
 @app.route("/api/runs", methods=["GET"])
 @require_auth
 def get_runs():
-    """Return all runs as JSON, newest first."""
+    """Return all runs as JSON, newest first, with recovery scores."""
     session = SessionLocal()
     try:
-        runs = session.query(Run).order_by(Run.date.desc()).all()
-        return jsonify([r.to_dict() for r in runs])
+        results = (
+            session.query(Run, Recovery.recovery_score)
+            .outerjoin(Recovery, Run.date == Recovery.date)
+            .order_by(Run.date.desc())
+            .all()
+        )
+        records = []
+        for run, recovery_score in results:
+            d = run.to_dict()
+            d["recovery_score"] = recovery_score
+            records.append(d)
+        return jsonify(records)
     finally:
         session.close()
 

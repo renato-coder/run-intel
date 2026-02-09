@@ -647,6 +647,7 @@
                   <th>Pace</th>
                   <th>HR</th>
                   <th>Strain</th>
+                  <th>Recovery</th>
                   <th>Shoe</th>
                 </tr>
               </thead>
@@ -661,6 +662,7 @@
                       <td className="green">{r.pace_per_mile || '\u2014'}</td>
                       <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) : '\u2014'}</td>
                       <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '\u2014'}</td>
+                      <td className={recoveryColor(r.recovery_score)}>{r.recovery_score != null ? Math.round(r.recovery_score) + '%' : '\u2014'}</td>
                       <td className="dim" style={{ fontSize: 11 }}>{shoeName}</td>
                     </tr>
                   );
