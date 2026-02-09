@@ -82,6 +82,15 @@ class Recovery(Base):
         }
 
 
+class Token(Base):
+    __tablename__ = "tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=False)
+    expiry = Column(Float, nullable=False)
+
+
 def init_db():
     """Create all tables if they don't exist."""
     Base.metadata.create_all(engine)

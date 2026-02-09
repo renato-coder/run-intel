@@ -3,10 +3,17 @@ Whoop API client for Run Intel.
 
 Handles OAuth2 authorization, token management, and all API calls
 to the Whoop developer API (v2).
+
+Token resolution order:
+  1. Database (tokens table)
+  2. Environment variables (WHOOP_ACCESS_TOKEN, WHOOP_REFRESH_TOKEN, WHOOP_TOKEN_EXPIRY)
+  3. Local file (data/tokens.json)
+
+On refresh, new tokens are saved to the database.
 """
 
-import os
 import json
+import os
 import secrets
 import time
 import urllib.parse
@@ -37,9 +44,11 @@ class WhoopClient:
         self.refresh_token_value = None
         self.token_expiry = 0
 
-        # Load saved tokens if they exist
-        if TOKEN_PATH.exists():
-            self._load_tokens()
+        # Try loading tokens: DB → env vars → file
+        if not self._load_tokens_from_db():
+            if not self._load_tokens_from_env():
+                if TOKEN_PATH.exists():
+                    self._load_tokens_from_file()
 
     # ── Auth URL ──────────────────────────────────────────────────────
 
@@ -72,7 +81,8 @@ class WhoopClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        self._save_tokens(data)
+        self._apply_token_data(data)
+        self._save_tokens_to_db()
         return data
 
     def refresh_token(self):
@@ -91,35 +101,75 @@ class WhoopClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        self._save_tokens(data)
+        self._apply_token_data(data)
+        self._save_tokens_to_db()
         return data
 
-    # ── Internal helpers ──────────────────────────────────────────────
+    # ── Token persistence ─────────────────────────────────────────────
 
-    def _save_tokens(self, data):
-        """Persist tokens to data/tokens.json."""
-        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    def _apply_token_data(self, data):
+        """Set in-memory token state from an OAuth response."""
         self.access_token = data["access_token"]
         self.refresh_token_value = data.get("refresh_token", self.refresh_token_value)
         self.token_expiry = time.time() + data.get("expires_in", 3600)
-        with open(TOKEN_PATH, "w") as f:
-            json.dump(
-                {
-                    "access_token": self.access_token,
-                    "refresh_token": self.refresh_token_value,
-                    "token_expiry": self.token_expiry,
-                },
-                f,
-                indent=2,
-            )
 
-    def _load_tokens(self):
+    def _load_tokens_from_db(self):
+        """Load the most recent tokens from the database. Returns True on success."""
+        try:
+            from database import SessionLocal, Token
+            session = SessionLocal()
+            try:
+                row = session.query(Token).order_by(Token.id.desc()).first()
+                if row:
+                    self.access_token = row.access_token
+                    self.refresh_token_value = row.refresh_token
+                    self.token_expiry = row.expiry
+                    return True
+            finally:
+                session.close()
+        except Exception:
+            pass
+        return False
+
+    def _load_tokens_from_env(self):
+        """Load tokens from environment variables. Returns True on success."""
+        access = os.environ.get("WHOOP_ACCESS_TOKEN")
+        refresh = os.environ.get("WHOOP_REFRESH_TOKEN")
+        expiry = os.environ.get("WHOOP_TOKEN_EXPIRY")
+        if access and refresh:
+            self.access_token = access
+            self.refresh_token_value = refresh
+            self.token_expiry = float(expiry) if expiry else 0
+            return True
+        return False
+
+    def _load_tokens_from_file(self):
         """Load tokens from data/tokens.json."""
         with open(TOKEN_PATH) as f:
             data = json.load(f)
         self.access_token = data["access_token"]
         self.refresh_token_value = data.get("refresh_token")
         self.token_expiry = data.get("token_expiry", 0)
+
+    def _save_tokens_to_db(self):
+        """Save current tokens to the database."""
+        try:
+            from database import SessionLocal, Token
+            session = SessionLocal()
+            try:
+                token = Token(
+                    access_token=self.access_token,
+                    refresh_token=self.refresh_token_value,
+                    expiry=self.token_expiry,
+                )
+                session.add(token)
+                session.commit()
+            finally:
+                session.close()
+        except Exception as e:
+            print(f"Warning: could not save tokens to DB: {e}")
+
+    # ── Request helpers ───────────────────────────────────────────────
 
     def _request(self, endpoint, params=None):
         """
