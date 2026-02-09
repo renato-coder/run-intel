@@ -7,6 +7,7 @@ to the Whoop developer API (v2).
 
 import os
 import json
+import secrets
 import time
 import urllib.parse
 from pathlib import Path
@@ -43,14 +44,17 @@ class WhoopClient:
     # ── Auth URL ──────────────────────────────────────────────────────
 
     def generate_auth_url(self):
-        """Build the OAuth2 authorization URL with all required scopes."""
+        """Build the OAuth2 authorization URL with all required scopes.
+        Returns (url, state) so the caller can validate state on redirect."""
+        self._oauth_state = secrets.token_urlsafe(32)
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
             "scope": SCOPES,
+            "state": self._oauth_state,
         }
-        return f"{AUTH_URL}?{urllib.parse.urlencode(params)}"
+        return f"{AUTH_URL}?{urllib.parse.urlencode(params)}", self._oauth_state
 
     # ── Token exchange ────────────────────────────────────────────────
 
