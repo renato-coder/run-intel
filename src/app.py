@@ -529,6 +529,26 @@ def log_run():
     return jsonify({"run": row, "coaching_insight": insight})
 
 
+@app.route("/api/test-whoop", methods=["GET"])
+@require_auth
+def test_whoop():
+    """Temporary endpoint to test Whoop API connection."""
+    try:
+        client = WhoopClient()
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        recs = client.get_recovery(start=today_start)
+        return jsonify({
+            "status": "ok",
+            "token_expiry": client.token_expiry,
+            "recovery_records": len(recs),
+            "data": recs,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     print(f"\n  Run Intel Dashboard: http://localhost:{port}\n")
