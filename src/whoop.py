@@ -125,6 +125,7 @@ class WhoopClient:
         """
         Make an authenticated GET request.
         Automatically refreshes the access token on 401.
+        Retries up to 3 times on 429 rate limit responses.
         """
         # Proactively refresh if token is expired or about to expire
         if time.time() >= self.token_expiry - 60:
@@ -133,13 +134,23 @@ class WhoopClient:
         url = f"{BASE_URL}{endpoint}"
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        resp = requests.get(url, headers=headers, params=params)
-
-        # Retry once on 401 after refreshing
-        if resp.status_code == 401:
-            self.refresh_token()
-            headers["Authorization"] = f"Bearer {self.access_token}"
+        for attempt in range(4):  # initial + 3 retries
             resp = requests.get(url, headers=headers, params=params)
+
+            # Retry once on 401 after refreshing
+            if resp.status_code == 401:
+                self.refresh_token()
+                headers["Authorization"] = f"Bearer {self.access_token}"
+                resp = requests.get(url, headers=headers, params=params)
+
+            # Handle 429 rate limit with retry
+            if resp.status_code == 429 and attempt < 3:
+                wait = int(resp.headers.get("Retry-After", 60))
+                print(f"  Rate limited. Waiting {wait}s (retry {attempt + 1}/3)...")
+                time.sleep(wait)
+                continue
+
+            break
 
         resp.raise_for_status()
         return resp.json()
@@ -156,7 +167,13 @@ class WhoopClient:
         if end:
             params["end"] = end
 
+        first_page = True
         while True:
+            # Small delay between pages to avoid hitting rate limits
+            if not first_page:
+                time.sleep(0.5)
+            first_page = False
+
             data = self._request(endpoint, params)
             records = data.get("records", [])
             all_records.extend(records)
