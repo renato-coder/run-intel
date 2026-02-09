@@ -9,16 +9,24 @@ Usage:
 """
 
 import csv
+import hashlib
+import os
+import secrets
 import sys
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
 
 # Add src/ to path so we can import whoop
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from whoop import WhoopClient
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "runintel2026")
+# Token derived from the password — stored in cookie to validate sessions
+AUTH_TOKEN = hashlib.sha256(f"runintel:{APP_PASSWORD}".encode()).hexdigest()
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 RUNS_CSV = DATA_DIR / "runs.csv"
@@ -32,6 +40,79 @@ COLUMNS = [
 ]
 
 app = Flask(__name__, static_folder="static")
+app.secret_key = secrets.token_hex(32)
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Run Intel — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0A0A0A;color:#E0E0E0;font-family:'Outfit',sans-serif;
+  display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-card{background:#141414;border:1px solid #1E1E1E;border-radius:12px;
+  padding:40px;width:100%;max-width:380px;text-align:center}
+.bolt{font-size:32px;color:#00F19F}
+h1{font-size:24px;font-weight:700;margin:12px 0 4px}
+.subtitle{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#666;margin-bottom:28px}
+input[type=password]{width:100%;background:#0A0A0A;border:1px solid #2A2A2A;border-radius:8px;
+  padding:12px 14px;color:#E0E0E0;font-family:'JetBrains Mono',monospace;font-size:14px;
+  outline:none;margin-bottom:16px;text-align:center;letter-spacing:2px}
+input:focus{border-color:#00F19F}
+button{width:100%;background:#00F19F;color:#0A0A0A;border:none;border-radius:8px;
+  padding:12px;font-family:'Outfit',sans-serif;font-weight:600;font-size:14px;cursor:pointer}
+button:hover{opacity:0.85}
+.error{color:#FF4D4D;font-size:13px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="bolt">&#9889;</div>
+  <h1>Run Intel</h1>
+  <div class="subtitle">Powered by Whoop</div>
+  {error}
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="Password" autofocus>
+    <button type="submit">Enter</button>
+  </form>
+</div>
+</body></html>"""
+
+
+def require_auth(f):
+    """Decorator: redirect to login if no valid auth cookie."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.cookies.get("auth_token") != AUTH_TOKEN:
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        # Already authed — go to dashboard
+        if request.cookies.get("auth_token") == AUTH_TOKEN:
+            return redirect("/")
+        return LOGIN_HTML.replace("{error}", "")
+    # POST — check password
+    password = request.form.get("password", "")
+    if password == APP_PASSWORD:
+        resp = make_response(redirect("/"))
+        resp.set_cookie("auth_token", AUTH_TOKEN, max_age=60 * 60 * 24 * 30,
+                        httponly=True, samesite="Lax")
+        return resp
+    return LOGIN_HTML.replace("{error}", '<div class="error">Wrong password.</div>')
+
+
+@app.route("/logout")
+def logout():
+    resp = make_response(redirect("/login"))
+    resp.delete_cookie("auth_token")
+    return resp
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -199,11 +280,13 @@ def generate_coaching_insight(row, recovery_data):
 # ── Routes ────────────────────────────────────────────────────────
 
 @app.route("/")
+@require_auth
 def index():
     return send_from_directory("static", "index.html")
 
 
 @app.route("/api/runs", methods=["GET"])
+@require_auth
 def get_runs():
     """Return all runs as JSON, newest first."""
     runs = load_runs()
@@ -218,6 +301,7 @@ def get_runs():
 
 
 @app.route("/api/recovery/today", methods=["GET"])
+@require_auth
 def get_recovery_today():
     """Return today's recovery, fetching from Whoop if not cached."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -257,6 +341,7 @@ def get_recovery_today():
 
 
 @app.route("/api/shoes", methods=["GET"])
+@require_auth
 def get_shoes():
     """Sum miles per shoe from runs that have a shoe value."""
     runs = load_runs()
@@ -273,6 +358,7 @@ def get_shoes():
 
 
 @app.route("/api/trends", methods=["GET"])
+@require_auth
 def get_trends():
     """Return date, pace_seconds, avg_hr for runs with valid pace data."""
     runs = load_runs()
@@ -294,6 +380,7 @@ def get_trends():
 
 
 @app.route("/api/snapshot", methods=["GET"])
+@require_auth
 def get_snapshot():
     """Return last 7d vs last 30d averages."""
     runs = load_runs()
@@ -336,6 +423,7 @@ def get_snapshot():
 
 
 @app.route("/api/runs", methods=["POST"])
+@require_auth
 def log_run():
     """Log a run: fetch Whoop data, generate coaching insight, save to CSV."""
     data = request.get_json()
