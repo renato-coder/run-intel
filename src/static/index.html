@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run Intel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0A0A0A;
+      color: #E0E0E0;
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root { max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; }
+
+    /* ── Typography ────────────────────────────────────────────── */
+    h1, h2, h3 { font-family: 'Outfit', sans-serif; font-weight: 600; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .green { color: #00F19F; }
+    .red { color: #FF4D4D; }
+    .yellow { color: #FFD600; }
+    .dim { color: #666; }
+    .text-sm { font-size: 13px; }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: #141414;
+      border: 1px solid #1E1E1E;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .card-header h2 { font-size: 16px; letter-spacing: 0.5px; }
+    .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 600px) { .card-grid { grid-template-columns: 1fr; } }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 0 24px;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-left h1 { font-size: 28px; font-weight: 700; }
+    .header-left .subtitle {
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #666;
+      margin-top: 2px;
+    }
+    .bolt { font-size: 24px; }
+    .status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #666;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #00F19F;
+      box-shadow: 0 0 6px #00F19F80;
+    }
+
+    /* ── Form ───────────────────────────────────────────────────── */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+    @media (max-width: 600px) {
+      .form-row { grid-template-columns: 1fr 1fr; }
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 6px;
+    }
+    .field input, .field select {
+      width: 100%;
+      background: #0A0A0A;
+      border: 1px solid #2A2A2A;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #E0E0E0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field input:focus, .field select:focus {
+      border-color: #00F19F;
+    }
+    .field input::placeholder { color: #444; }
+    .btn {
+      background: #00F19F;
+      color: #0A0A0A;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Stat Boxes ─────────────────────────────────────────────── */
+    .stat-box {
+      background: #0A0A0A;
+      border: 1px solid #1E1E1E;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat-box .label {
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .stat-box .value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 22px;
+      font-weight: 600;
+      color: #FFF;
+    }
+    .stat-box .sub {
+      font-size: 12px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    /* ── Insight ─────────────────────────────────────────────────── */
+    .insight {
+      background: #0D1F17;
+      border: 1px solid #00F19F30;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #C0E8D4;
+    }
+    .insight .tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #00F19F;
+      margin-bottom: 8px;
+    }
+
+    /* ── Table ───────────────────────────────────────────────────── */
+    .run-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+    }
+    .run-table th {
+      text-align: left;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #666;
+      padding: 8px 10px;
+      border-bottom: 1px solid #1E1E1E;
+    }
+    .run-table td {
+      padding: 10px 10px;
+      border-bottom: 1px solid #1E1E1E08;
+    }
+    .run-table tr:hover td { background: #1A1A1A; }
+
+    /* ── Shoe Pill ──────────────────────────────────────────────── */
+    .shoe-bar {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 10px;
+    }
+    .shoe-bar .name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      width: 120px;
+      flex-shrink: 0;
+    }
+    .shoe-bar .track {
+      flex: 1; height: 24px; background: #1E1E1E;
+      border-radius: 6px; overflow: hidden;
+    }
+    .shoe-bar .fill {
+      height: 100%; background: #00F19F;
+      border-radius: 6px;
+      transition: width 0.5s ease;
+    }
+    .shoe-bar .miles {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #888;
+      width: 60px;
+      text-align: right;
+    }
+
+    /* ── Chart ───────────────────────────────────────────────────── */
+    .chart-wrap { position: relative; height: 260px; margin-top: 8px; }
+
+    /* ── Loading ─────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #333;
+      border-top-color: #00F19F;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Snapshot Compare ────────────────────────────────────────── */
+    .snap-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #1E1E1E;
+    }
+    .snap-row:last-child { border-bottom: none; }
+    .snap-label { font-size: 12px; color: #888; width: 100px; }
+    .snap-val { font-family: 'JetBrains Mono', monospace; font-size: 15px; text-align: center; flex: 1; }
+    .snap-delta { font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 80px; text-align: right; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Helpers ─────────────────────────────────────────────────
+    const api = (path, opts) => fetch(path, opts).then(r => r.json());
+
+    function secToPace(s) {
+      if (!s || s <= 0) return 'N/A';
+      const m = Math.floor(s / 60);
+      const sec = Math.round(s % 60);
+      return m + ':' + String(sec).padStart(2, '0');
+    }
+
+    function recoveryColor(score) {
+      if (score == null) return 'dim';
+      if (score >= 67) return 'green';
+      if (score >= 34) return 'yellow';
+      return 'red';
+    }
+
+    // ── Components ──────────────────────────────────────────────
+
+    function Header() {
+      return (
+        <div className="header">
+          <div className="header-left">
+            <span className="bolt green">&#9889;</span>
+            <div>
+              <h1>Run Intel</h1>
+              <div className="subtitle">Powered by Whoop</div>
+            </div>
+          </div>
+          <div className="status">
+            <div className="status-dot"></div>
+            Connected
+          </div>
+        </div>
+      );
+    }
+
+    function LogRunCard({ onLogged }) {
+      const [dist, setDist] = useState('');
+      const [time, setTime] = useState('');
+      const [shoe, setShoe] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [insight, setInsight] = useState(null);
+
+      const submit = async () => {
+        if (!dist || !time) return;
+        setLoading(true);
+        setInsight(null);
+        try {
+          const res = await api('/api/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              distance_miles: parseFloat(dist),
+              time_minutes: parseFloat(time),
+              shoe,
+            }),
+          });
+          setInsight(res.coaching_insight);
+          setDist('');
+          setTime('');
+          setShoe('');
+          if (onLogged) onLogged();
+        } catch (e) {
+          setInsight('Error logging run. Check console.');
+          console.error(e);
+        }
+        setLoading(false);
+      };
+
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2 className="green">LOG A RUN</h2>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label>Distance (mi)</label>
+              <input type="number" step="0.1" placeholder="6.2"
+                value={dist} onChange={e => setDist(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Time (min)</label>
+              <input type="number" step="0.1" placeholder="48.5"
+                value={time} onChange={e => setTime(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Shoe</label>
+              <select value={shoe} onChange={e => setShoe(e.target.value)}>
+                <option value="">None</option>
+                <option value="alphafly">Alphafly</option>
+                <option value="evosl">Evo SL</option>
+                <option value="cloudmonster">Cloudmonster</option>
+                <option value="zoomfly">Zoom Fly</option>
+              </select>
+            </div>
+            <button className="btn" onClick={submit} disabled={loading || !dist || !time}>
+              {loading ? <span className="spinner"></span> : 'Log Run'}
+            </button>
+          </div>
+          {insight && (
+            <div className="insight">
+              <div className="tag">Coaching Insight</div>
+              <div>{insight}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function SnapshotCard({ snapshot, recovery }) {
+      const s7 = snapshot?.last_7d || {};
+      const s30 = snapshot?.last_30d || {};
+
+      const rows = [
+        { label: 'Avg HR', key: 'avg_hr', unit: ' bpm', lower: true },
+        { label: 'Strain', key: 'avg_strain', unit: '', lower: false },
+        { label: 'Recovery', key: 'recovery', unit: '%', lower: false },
+        { label: 'HRV', key: 'hrv', unit: ' ms', lower: false },
+        { label: 'Resting HR', key: 'resting_hr', unit: ' bpm', lower: true },
+      ];
+
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2>CURRENT SNAPSHOT</h2>
+            <span className="text-sm dim">7d vs 30d</span>
+          </div>
+          {recovery && recovery.recovery_score != null && (
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div className="dim text-sm" style={{ marginBottom: 4 }}>TODAY'S RECOVERY</div>
+              <span className={'mono ' + recoveryColor(recovery.recovery_score)}
+                    style={{ fontSize: 40, fontWeight: 700 }}>
+                {Math.round(recovery.recovery_score)}%
+              </span>
+              <div className="dim text-sm" style={{ marginTop: 4 }}>
+                {recovery.resting_hr != null && <span>RHR {Math.round(recovery.resting_hr)} bpm</span>}
+                {recovery.hrv != null && <span> &middot; HRV {recovery.hrv.toFixed(1)} ms</span>}
+              </div>
+            </div>
+          )}
+          {rows.map(r => {
+            const v7 = s7[r.key];
+            const v30 = s30[r.key];
+            if (v7 == null && v30 == null) return null;
+            const diff = (v7 != null && v30 != null) ? v7 - v30 : null;
+            let deltaClass = 'dim';
+            if (diff != null && Math.abs(diff) >= 1) {
+              const good = r.lower ? diff < 0 : diff > 0;
+              deltaClass = good ? 'green' : 'red';
+            }
+            return (
+              <div className="snap-row" key={r.key}>
+                <div className="snap-label">{r.label}</div>
+                <div className="snap-val">{v7 != null ? (r.key === 'hrv' ? v7.toFixed(1) : Math.round(v7)) + r.unit : '—'}</div>
+                <div className="snap-val dim">{v30 != null ? (r.key === 'hrv' ? v30.toFixed(1) : Math.round(v30)) + r.unit : '—'}</div>
+                <div className={'snap-delta ' + deltaClass}>
+                  {diff != null ? (diff > 0 ? '+' : '') + (r.key === 'hrv' ? diff.toFixed(1) : Math.round(diff)) : ''}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function ShoesCard({ shoes }) {
+      if (!shoes || shoes.length === 0) return null;
+      const maxMiles = Math.max(...shoes.map(s => s.miles), 1);
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2>SHOE MILEAGE</h2>
+          </div>
+          {shoes.map(s => (
+            <div className="shoe-bar" key={s.name}>
+              <div className="name">{s.name}</div>
+              <div className="track">
+                <div className="fill" style={{ width: (s.miles / maxMiles * 100) + '%' }}></div>
+              </div>
+              <div className="miles">{s.miles} mi</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function TrendChart({ trends }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+
+      useEffect(() => {
+        if (!trends || trends.length === 0) return;
+
+        if (chartRef.current) chartRef.current.destroy();
+
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: trends.map(t => t.date),
+            datasets: [
+              {
+                label: 'Pace (sec/mi)',
+                data: trends.map(t => t.pace_seconds),
+                borderColor: '#00F19F',
+                backgroundColor: '#00F19F20',
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#00F19F',
+                yAxisID: 'y',
+              },
+              {
+                label: 'Avg HR',
+                data: trends.map(t => t.avg_hr),
+                borderColor: '#FF4D4D',
+                backgroundColor: '#FF4D4D20',
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#FF4D4D',
+                yAxisID: 'y1',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: {
+                labels: { color: '#888', font: { family: 'Outfit', size: 12 } },
+              },
+              tooltip: {
+                backgroundColor: '#1E1E1E',
+                titleColor: '#FFF',
+                bodyColor: '#CCC',
+                borderColor: '#333',
+                borderWidth: 1,
+                callbacks: {
+                  label: function(ctx) {
+                    if (ctx.datasetIndex === 0) return 'Pace: ' + secToPace(ctx.parsed.y);
+                    return 'HR: ' + ctx.parsed.y + ' bpm';
+                  }
+                }
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: '#555', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } },
+                grid: { color: '#1E1E1E' },
+              },
+              y: {
+                position: 'left',
+                reverse: true,
+                ticks: {
+                  color: '#00F19F',
+                  font: { family: 'JetBrains Mono', size: 11 },
+                  callback: v => secToPace(v),
+                },
+                grid: { color: '#1E1E1E' },
+                title: { display: true, text: 'Pace', color: '#00F19F', font: { family: 'Outfit', size: 12 } },
+              },
+              y1: {
+                position: 'right',
+                ticks: {
+                  color: '#FF4D4D',
+                  font: { family: 'JetBrains Mono', size: 11 },
+                },
+                grid: { display: false },
+                title: { display: true, text: 'HR (bpm)', color: '#FF4D4D', font: { family: 'Outfit', size: 12 } },
+              },
+            },
+          },
+        });
+
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [trends]);
+
+      if (!trends || trends.length === 0) return null;
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2>PACE vs HEART RATE</h2>
+            <span className="text-sm dim">{trends.length} runs</span>
+          </div>
+          <div className="chart-wrap">
+            <canvas ref={canvasRef}></canvas>
+          </div>
+        </div>
+      );
+    }
+
+    function RecentRuns({ runs }) {
+      if (!runs || runs.length === 0) return null;
+      const display = runs.slice(0, 15);
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2>RECENT RUNS</h2>
+            <span className="text-sm dim">{runs.length} total</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="run-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Distance</th>
+                  <th>Time</th>
+                  <th>Pace</th>
+                  <th>Avg HR</th>
+                  <th>Strain</th>
+                  <th>Shoe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {display.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.date || '—'}</td>
+                    <td>{r.distance_miles ? parseFloat(r.distance_miles).toFixed(1) + ' mi' : '—'}</td>
+                    <td>{r.time_minutes ? parseFloat(r.time_minutes).toFixed(1) + ' min' : '—'}</td>
+                    <td className="green">{r.pace_per_mile || '—'}</td>
+                    <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) + ' bpm' : '—'}</td>
+                    <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '—'}</td>
+                    <td className="dim">{r.shoes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ── App ──────────────────────────────────────────────────────
+
+    function App() {
+      const [runs, setRuns] = useState([]);
+      const [recovery, setRecovery] = useState(null);
+      const [shoes, setShoes] = useState([]);
+      const [trends, setTrends] = useState([]);
+      const [snapshot, setSnapshot] = useState(null);
+
+      const loadAll = useCallback(() => {
+        api('/api/runs').then(setRuns);
+        api('/api/recovery/today').then(setRecovery);
+        api('/api/shoes').then(setShoes);
+        api('/api/trends').then(setTrends);
+        api('/api/snapshot').then(setSnapshot);
+      }, []);
+
+      useEffect(() => { loadAll(); }, [loadAll]);
+
+      return (
+        <div>
+          <Header />
+          <LogRunCard onLogged={loadAll} />
+          <div className="card-grid">
+            <SnapshotCard snapshot={snapshot} recovery={recovery} />
+            <div>
+              <ShoesCard shoes={shoes} />
+            </div>
+          </div>
+          <TrendChart trends={trends} />
+          <RecentRuns runs={runs} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
