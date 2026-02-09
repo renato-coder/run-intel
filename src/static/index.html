@@ -47,8 +47,15 @@
       margin-bottom: 16px;
     }
     .card-header h2 { font-size: 16px; letter-spacing: 0.5px; }
-    .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 600px) { .card-grid { grid-template-columns: 1fr; } }
+
+    /* ── Two Column Layout ─────────────────────────────────────── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .two-col > .card { margin-bottom: 0; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
 
     /* ── Header ─────────────────────────────────────────────────── */
     .header {
@@ -80,7 +87,7 @@
     /* ── Form ───────────────────────────────────────────────────── */
     .form-row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
+      grid-template-columns: 1fr 1fr 1.5fr auto;
       gap: 12px;
       align-items: end;
     }
@@ -107,62 +114,46 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    .field input:focus, .field select:focus {
-      border-color: #00F19F;
-    }
+    .field input:focus, .field select:focus { border-color: #00F19F; }
     .field input::placeholder { color: #444; }
+    .field select option { background: #141414; color: #E0E0E0; }
+
     .btn {
       background: #00F19F;
       color: #0A0A0A;
       border: none;
       border-radius: 8px;
-      padding: 10px 24px;
+      padding: 10px 28px;
       font-family: 'Outfit', sans-serif;
       font-weight: 600;
       font-size: 14px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
       white-space: nowrap;
     }
-    .btn:hover { opacity: 0.85; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn:hover { opacity: 0.85; box-shadow: 0 0 16px #00F19F40; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 
-    /* ── Stat Boxes ─────────────────────────────────────────────── */
-    .stat-box {
-      background: #0A0A0A;
-      border: 1px solid #1E1E1E;
-      border-radius: 8px;
-      padding: 14px 16px;
-    }
-    .stat-box .label {
-      font-size: 11px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      color: #666;
-      margin-bottom: 4px;
-    }
-    .stat-box .value {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 22px;
-      font-weight: 600;
-      color: #FFF;
-    }
-    .stat-box .sub {
-      font-size: 12px;
-      color: #666;
-      margin-top: 2px;
-    }
-
-    /* ── Insight ─────────────────────────────────────────────────── */
+    /* ── Coaching Insight ────────────────────────────────────────── */
     .insight {
-      background: #0D1F17;
+      background: linear-gradient(135deg, #0A1F15 0%, #0D2A1A 50%, #0A1F15 100%);
       border: 1px solid #00F19F30;
       border-radius: 10px;
-      padding: 16px 20px;
+      padding: 20px 24px;
       margin-top: 16px;
       font-size: 14px;
-      line-height: 1.6;
-      color: #C0E8D4;
+      line-height: 1.7;
+      color: #C8EDD9;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 0 20px #00F19F10, inset 0 0 20px #00F19F08;
+    }
+    .insight::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00F19F, transparent);
     }
     .insight .tag {
       display: inline-block;
@@ -172,6 +163,89 @@
       text-transform: uppercase;
       color: #00F19F;
       margin-bottom: 8px;
+    }
+
+    /* ── Shoe Tracker ───────────────────────────────────────────── */
+    .shoe-item { margin-bottom: 18px; }
+    .shoe-item:last-child { margin-bottom: 0; }
+    .shoe-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .shoe-name { font-size: 13px; font-weight: 500; color: #CCC; }
+    .shoe-miles {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .shoe-track {
+      width: 100%;
+      height: 8px;
+      background: #1E1E1E;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .shoe-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+    .shoe-label {
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    /* ── Snapshot ────────────────────────────────────────────────── */
+    .recovery-hero {
+      text-align: center;
+      padding: 12px 0 20px;
+      border-bottom: 1px solid #1E1E1E;
+      margin-bottom: 16px;
+    }
+    .recovery-hero .big-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .recovery-hero .sub-stats {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 8px;
+    }
+    .recovery-hero .sub-stat {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #888;
+    }
+    .snap-table { width: 100%; }
+    .snap-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 70px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #1E1E1E;
+    }
+    .snap-row:last-child { border-bottom: none; }
+    .snap-row.snap-header {
+      border-bottom: 1px solid #2A2A2A;
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+    }
+    .snap-label { font-size: 12px; color: #888; }
+    .snap-hdr { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #555; text-align: center; }
+    .snap-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      text-align: center;
+    }
+    .snap-delta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      text-align: right;
     }
 
     /* ── Table ───────────────────────────────────────────────────── */
@@ -197,36 +271,8 @@
     }
     .run-table tr:hover td { background: #1A1A1A; }
 
-    /* ── Shoe Pill ──────────────────────────────────────────────── */
-    .shoe-bar {
-      display: flex; align-items: center; gap: 12px;
-      margin-bottom: 10px;
-    }
-    .shoe-bar .name {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      width: 120px;
-      flex-shrink: 0;
-    }
-    .shoe-bar .track {
-      flex: 1; height: 24px; background: #1E1E1E;
-      border-radius: 6px; overflow: hidden;
-    }
-    .shoe-bar .fill {
-      height: 100%; background: #00F19F;
-      border-radius: 6px;
-      transition: width 0.5s ease;
-    }
-    .shoe-bar .miles {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      color: #888;
-      width: 60px;
-      text-align: right;
-    }
-
     /* ── Chart ───────────────────────────────────────────────────── */
-    .chart-wrap { position: relative; height: 260px; margin-top: 8px; }
+    .chart-wrap { position: relative; height: 280px; margin-top: 8px; }
 
     /* ── Loading ─────────────────────────────────────────────────── */
     .spinner {
@@ -238,19 +284,6 @@
       animation: spin 0.6s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Snapshot Compare ────────────────────────────────────────── */
-    .snap-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid #1E1E1E;
-    }
-    .snap-row:last-child { border-bottom: none; }
-    .snap-label { font-size: 12px; color: #888; width: 100px; }
-    .snap-val { font-family: 'JetBrains Mono', monospace; font-size: 15px; text-align: center; flex: 1; }
-    .snap-delta { font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 80px; text-align: right; }
   </style>
 </head>
 <body>
@@ -258,7 +291,17 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // ── Helpers ─────────────────────────────────────────────────
+    // ── Config ───────────────────────────────────────────────────
+    const SHOE_DISPLAY = {
+      alphafly: 'Nike Alpha Flys',
+      evosl: 'Adidas Evo SL',
+      cloudmonster: 'On Cloudmonster 2',
+      zoomfly: 'Nike Zoom Fly 6',
+    };
+    const SHOE_KEYS = Object.keys(SHOE_DISPLAY);
+    const SHOE_MAX = 500; // max for progress bar scale
+
+    // ── Helpers ──────────────────────────────────────────────────
     const api = (path, opts) => fetch(path, opts).then(r => r.json());
 
     function secToPace(s) {
@@ -275,7 +318,19 @@
       return 'red';
     }
 
-    // ── Components ──────────────────────────────────────────────
+    function shoeColor(miles) {
+      if (miles >= 350) return '#FF4D4D';
+      if (miles >= 200) return '#FFD600';
+      return '#00F19F';
+    }
+
+    function shoeStatus(miles) {
+      if (miles >= 350) return 'Replace soon';
+      if (miles >= 200) return 'Breaking in';
+      return 'Fresh';
+    }
+
+    // ── Components ───────────────────────────────────────────────
 
     function Header() {
       return (
@@ -298,7 +353,7 @@
     function LogRunCard({ onLogged }) {
       const [dist, setDist] = useState('');
       const [time, setTime] = useState('');
-      const [shoe, setShoe] = useState('');
+      const [shoe, setShoe] = useState('alphafly');
       const [loading, setLoading] = useState(false);
       const [insight, setInsight] = useState(null);
 
@@ -319,7 +374,6 @@
           setInsight(res.coaching_insight);
           setDist('');
           setTime('');
-          setShoe('');
           if (onLogged) onLogged();
         } catch (e) {
           setInsight('Error logging run. Check console.');
@@ -347,11 +401,9 @@
             <div className="field">
               <label>Shoe</label>
               <select value={shoe} onChange={e => setShoe(e.target.value)}>
-                <option value="">None</option>
-                <option value="alphafly">Alphafly</option>
-                <option value="evosl">Evo SL</option>
-                <option value="cloudmonster">Cloudmonster</option>
-                <option value="zoomfly">Zoom Fly</option>
+                {SHOE_KEYS.map(k => (
+                  <option key={k} value={k}>{SHOE_DISPLAY[k]}</option>
+                ))}
               </select>
             </div>
             <button className="btn" onClick={submit} disabled={loading || !dist || !time}>
@@ -360,10 +412,47 @@
           </div>
           {insight && (
             <div className="insight">
-              <div className="tag">Coaching Insight</div>
+              <div className="tag">&#9889; Coaching Insight</div>
               <div>{insight}</div>
             </div>
           )}
+        </div>
+      );
+    }
+
+    function ShoeTracker({ shoes }) {
+      // Build map from API data, default all shoes to 0
+      const mileMap = {};
+      SHOE_KEYS.forEach(k => { mileMap[k] = 0; });
+      if (shoes) {
+        shoes.forEach(s => { if (mileMap.hasOwnProperty(s.name)) mileMap[s.name] = s.miles; });
+      }
+
+      return (
+        <div className="card">
+          <div className="card-header">
+            <h2>SHOE TRACKER</h2>
+          </div>
+          {SHOE_KEYS.map(k => {
+            const miles = mileMap[k];
+            const pct = Math.min((miles / SHOE_MAX) * 100, 100);
+            const color = shoeColor(miles);
+            const status = shoeStatus(miles);
+            return (
+              <div className="shoe-item" key={k}>
+                <div className="shoe-top">
+                  <span className="shoe-name">{SHOE_DISPLAY[k]}</span>
+                  <span className="shoe-miles" style={{ color }}>{miles.toFixed(1)} mi</span>
+                </div>
+                <div className="shoe-track">
+                  <div className="shoe-fill" style={{ width: pct + '%', background: color }}></div>
+                </div>
+                <div className="shoe-label" style={{ color: color === '#FF4D4D' ? '#FF4D4D' : '#555' }}>
+                  {status}
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     }
@@ -383,64 +472,53 @@
       return (
         <div className="card">
           <div className="card-header">
-            <h2>CURRENT SNAPSHOT</h2>
-            <span className="text-sm dim">7d vs 30d</span>
+            <h2>TODAY'S SNAPSHOT</h2>
           </div>
           {recovery && recovery.recovery_score != null && (
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <div className="dim text-sm" style={{ marginBottom: 4 }}>TODAY'S RECOVERY</div>
-              <span className={'mono ' + recoveryColor(recovery.recovery_score)}
-                    style={{ fontSize: 40, fontWeight: 700 }}>
+            <div className="recovery-hero">
+              <div className="dim text-sm" style={{ marginBottom: 4, letterSpacing: '1px', fontSize: 10, textTransform: 'uppercase' }}>Recovery</div>
+              <div className={'big-num ' + recoveryColor(recovery.recovery_score)}>
                 {Math.round(recovery.recovery_score)}%
-              </span>
-              <div className="dim text-sm" style={{ marginTop: 4 }}>
-                {recovery.resting_hr != null && <span>RHR {Math.round(recovery.resting_hr)} bpm</span>}
-                {recovery.hrv != null && <span> &middot; HRV {recovery.hrv.toFixed(1)} ms</span>}
+              </div>
+              <div className="sub-stats">
+                {recovery.resting_hr != null && <span className="sub-stat">RHR {Math.round(recovery.resting_hr)}</span>}
+                {recovery.hrv != null && <span className="sub-stat">HRV {recovery.hrv.toFixed(1)}</span>}
               </div>
             </div>
           )}
-          {rows.map(r => {
-            const v7 = s7[r.key];
-            const v30 = s30[r.key];
-            if (v7 == null && v30 == null) return null;
-            const diff = (v7 != null && v30 != null) ? v7 - v30 : null;
-            let deltaClass = 'dim';
-            if (diff != null && Math.abs(diff) >= 1) {
-              const good = r.lower ? diff < 0 : diff > 0;
-              deltaClass = good ? 'green' : 'red';
-            }
-            return (
-              <div className="snap-row" key={r.key}>
-                <div className="snap-label">{r.label}</div>
-                <div className="snap-val">{v7 != null ? (r.key === 'hrv' ? v7.toFixed(1) : Math.round(v7)) + r.unit : '—'}</div>
-                <div className="snap-val dim">{v30 != null ? (r.key === 'hrv' ? v30.toFixed(1) : Math.round(v30)) + r.unit : '—'}</div>
-                <div className={'snap-delta ' + deltaClass}>
-                  {diff != null ? (diff > 0 ? '+' : '') + (r.key === 'hrv' ? diff.toFixed(1) : Math.round(diff)) : ''}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-
-    function ShoesCard({ shoes }) {
-      if (!shoes || shoes.length === 0) return null;
-      const maxMiles = Math.max(...shoes.map(s => s.miles), 1);
-      return (
-        <div className="card">
-          <div className="card-header">
-            <h2>SHOE MILEAGE</h2>
-          </div>
-          {shoes.map(s => (
-            <div className="shoe-bar" key={s.name}>
-              <div className="name">{s.name}</div>
-              <div className="track">
-                <div className="fill" style={{ width: (s.miles / maxMiles * 100) + '%' }}></div>
-              </div>
-              <div className="miles">{s.miles} mi</div>
+          <div className="snap-table">
+            <div className="snap-row snap-header">
+              <div className="snap-hdr"></div>
+              <div className="snap-hdr">7 Day</div>
+              <div className="snap-hdr">30 Day</div>
+              <div className="snap-hdr" style={{ textAlign: 'right' }}>Delta</div>
             </div>
-          ))}
+            {rows.map(r => {
+              const v7 = s7[r.key];
+              const v30 = s30[r.key];
+              if (v7 == null && v30 == null) return null;
+              const diff = (v7 != null && v30 != null) ? v7 - v30 : null;
+              let deltaClass = 'dim';
+              if (diff != null && Math.abs(diff) >= 1) {
+                const good = r.lower ? diff < 0 : diff > 0;
+                deltaClass = good ? 'green' : 'red';
+              }
+              const fmt = (v, key) => {
+                if (v == null) return '\u2014';
+                return (key === 'hrv' ? v.toFixed(1) : Math.round(v)) + r.unit;
+              };
+              return (
+                <div className="snap-row" key={r.key}>
+                  <div className="snap-label">{r.label}</div>
+                  <div className="snap-val">{fmt(v7, r.key)}</div>
+                  <div className="snap-val dim">{fmt(v30, r.key)}</div>
+                  <div className={'snap-delta ' + deltaClass}>
+                    {diff != null ? (diff > 0 ? '+' : '') + (r.key === 'hrv' ? diff.toFixed(1) : Math.round(diff)) : ''}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
     }
@@ -451,7 +529,6 @@
 
       useEffect(() => {
         if (!trends || trends.length === 0) return;
-
         if (chartRef.current) chartRef.current.destroy();
 
         const ctx = canvasRef.current.getContext('2d');
@@ -461,23 +538,27 @@
             labels: trends.map(t => t.date),
             datasets: [
               {
-                label: 'Pace (sec/mi)',
+                label: 'Pace',
                 data: trends.map(t => t.pace_seconds),
                 borderColor: '#00F19F',
-                backgroundColor: '#00F19F20',
+                backgroundColor: '#00F19F15',
+                fill: true,
                 tension: 0.3,
                 pointRadius: 3,
                 pointBackgroundColor: '#00F19F',
+                borderWidth: 2,
                 yAxisID: 'y',
               },
               {
                 label: 'Avg HR',
                 data: trends.map(t => t.avg_hr),
                 borderColor: '#FF4D4D',
-                backgroundColor: '#FF4D4D20',
+                backgroundColor: '#FF4D4D10',
+                fill: true,
                 tension: 0.3,
                 pointRadius: 3,
                 pointBackgroundColor: '#FF4D4D',
+                borderWidth: 2,
                 yAxisID: 'y1',
               },
             ],
@@ -488,51 +569,48 @@
             interaction: { mode: 'index', intersect: false },
             plugins: {
               legend: {
-                labels: { color: '#888', font: { family: 'Outfit', size: 12 } },
+                labels: { color: '#888', font: { family: 'Outfit', size: 12 }, usePointStyle: true, pointStyle: 'circle' },
               },
               tooltip: {
-                backgroundColor: '#1E1E1E',
+                backgroundColor: '#1A1A1A',
                 titleColor: '#FFF',
                 bodyColor: '#CCC',
-                borderColor: '#333',
+                borderColor: '#2A2A2A',
                 borderWidth: 1,
+                padding: 12,
                 callbacks: {
                   label: function(ctx) {
-                    if (ctx.datasetIndex === 0) return 'Pace: ' + secToPace(ctx.parsed.y);
-                    return 'HR: ' + ctx.parsed.y + ' bpm';
+                    if (ctx.datasetIndex === 0) return ' Pace: ' + secToPace(ctx.parsed.y) + '/mi';
+                    return ' HR: ' + ctx.parsed.y + ' bpm';
                   }
                 }
               },
             },
             scales: {
               x: {
-                ticks: { color: '#555', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } },
-                grid: { color: '#1E1E1E' },
+                ticks: { color: '#444', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } },
+                grid: { color: '#1A1A1A' },
               },
               y: {
                 position: 'left',
                 reverse: true,
                 ticks: {
-                  color: '#00F19F',
+                  color: '#00F19F80',
                   font: { family: 'JetBrains Mono', size: 11 },
                   callback: v => secToPace(v),
                 },
-                grid: { color: '#1E1E1E' },
+                grid: { color: '#1A1A1A' },
                 title: { display: true, text: 'Pace', color: '#00F19F', font: { family: 'Outfit', size: 12 } },
               },
               y1: {
                 position: 'right',
-                ticks: {
-                  color: '#FF4D4D',
-                  font: { family: 'JetBrains Mono', size: 11 },
-                },
+                ticks: { color: '#FF4D4D80', font: { family: 'JetBrains Mono', size: 11 } },
                 grid: { display: false },
                 title: { display: true, text: 'HR (bpm)', color: '#FF4D4D', font: { family: 'Outfit', size: 12 } },
               },
             },
           },
         });
-
         return () => { if (chartRef.current) chartRef.current.destroy(); };
       }, [trends]);
 
@@ -541,7 +619,7 @@
         <div className="card">
           <div className="card-header">
             <h2>PACE vs HEART RATE</h2>
-            <span className="text-sm dim">{trends.length} runs</span>
+            <span className="text-sm dim">{trends.length} logged runs</span>
           </div>
           <div className="chart-wrap">
             <canvas ref={canvasRef}></canvas>
@@ -552,7 +630,7 @@
 
     function RecentRuns({ runs }) {
       if (!runs || runs.length === 0) return null;
-      const display = runs.slice(0, 15);
+      const display = runs.slice(0, 20);
       return (
         <div className="card">
           <div className="card-header">
@@ -564,26 +642,29 @@
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Distance</th>
+                  <th>Dist</th>
                   <th>Time</th>
                   <th>Pace</th>
-                  <th>Avg HR</th>
+                  <th>HR</th>
                   <th>Strain</th>
                   <th>Shoe</th>
                 </tr>
               </thead>
               <tbody>
-                {display.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.date || '—'}</td>
-                    <td>{r.distance_miles ? parseFloat(r.distance_miles).toFixed(1) + ' mi' : '—'}</td>
-                    <td>{r.time_minutes ? parseFloat(r.time_minutes).toFixed(1) + ' min' : '—'}</td>
-                    <td className="green">{r.pace_per_mile || '—'}</td>
-                    <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) + ' bpm' : '—'}</td>
-                    <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '—'}</td>
-                    <td className="dim">{r.shoes || '—'}</td>
-                  </tr>
-                ))}
+                {display.map((r, i) => {
+                  const shoeName = SHOE_DISPLAY[r.shoes] || r.shoes || '\u2014';
+                  return (
+                    <tr key={i}>
+                      <td>{r.date || '\u2014'}</td>
+                      <td>{r.distance_miles ? parseFloat(r.distance_miles).toFixed(1) : '\u2014'}</td>
+                      <td>{r.time_minutes ? parseFloat(r.time_minutes).toFixed(1) : '\u2014'}</td>
+                      <td className="green">{r.pace_per_mile || '\u2014'}</td>
+                      <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) : '\u2014'}</td>
+                      <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '\u2014'}</td>
+                      <td className="dim" style={{ fontSize: 11 }}>{shoeName}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -614,11 +695,9 @@
         <div>
           <Header />
           <LogRunCard onLogged={loadAll} />
-          <div className="card-grid">
+          <div className="two-col">
+            <ShoeTracker shoes={shoes} />
             <SnapshotCard snapshot={snapshot} recovery={recovery} />
-            <div>
-              <ShoesCard shoes={shoes} />
-            </div>
           </div>
           <TrendChart trends={trends} />
           <RecentRuns runs={runs} />
