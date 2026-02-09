@@ -418,5 +418,6 @@ def log_run():
 
 
 if __name__ == "__main__":
-    print("\n  Run Intel Dashboard: http://localhost:5050\n")
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    port = int(os.environ.get("PORT", 5050))
+    print(f"\n  Run Intel Dashboard: http://localhost:{port}\n")
+    app.run(host="0.0.0.0", port=port, debug=True)
