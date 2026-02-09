@@ -8,39 +8,32 @@ Usage:
     python src/app.py
 """
 
-import csv
 import hashlib
 import os
 import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
 import pandas as pd
 from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
+from sqlalchemy import func
 
 # Add src/ to path so we can import whoop
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from database import Recovery, Run, SessionLocal, init_db
 from whoop import WhoopClient
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "runintel2026")
 # Token derived from the password — stored in cookie to validate sessions
 AUTH_TOKEN = hashlib.sha256(f"runintel:{APP_PASSWORD}".encode()).hexdigest()
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-RUNS_CSV = DATA_DIR / "runs.csv"
-RECOVERY_CSV = DATA_DIR / "recovery.csv"
-
-COLUMNS = [
-    "date", "distance_miles", "time_minutes", "pace_per_mile",
-    "avg_hr", "max_hr", "strain", "whoop_distance_meters",
-    "zone_zero_milli", "zone_one_milli", "zone_two_milli",
-    "zone_three_milli", "zone_four_milli", "zone_five_milli", "shoes",
-]
-
 app = Flask(__name__, static_folder="static")
 app.secret_key = secrets.token_hex(32)
+
+# Create tables on startup
+init_db()
 
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -164,25 +157,21 @@ def find_closest_run(workouts):
     return min(running, key=time_diff)
 
 
-def load_runs():
-    """Load runs.csv into a DataFrame."""
-    if not RUNS_CSV.exists():
-        return pd.DataFrame(columns=COLUMNS)
-    return pd.read_csv(RUNS_CSV, parse_dates=["date"])
-
-
-def load_recovery():
-    """Load recovery.csv into a DataFrame."""
-    if not RECOVERY_CSV.exists():
-        return pd.DataFrame(columns=["date", "recovery_score", "hrv", "resting_hr"])
-    return pd.read_csv(RECOVERY_CSV, parse_dates=["date"])
-
-
 def safe_float(val):
     """Convert to float, return None if not possible."""
     try:
         v = float(val)
         return v if pd.notna(v) else None
+    except (ValueError, TypeError):
+        return None
+
+
+def safe_int(val):
+    """Convert to int, return None if empty or invalid."""
+    if val is None or val == "":
+        return None
+    try:
+        return int(float(val))
     except (ValueError, TypeError):
         return None
 
@@ -218,24 +207,33 @@ def generate_coaching_insight(row, recovery_data):
     pace_display = seconds_to_pace(today_pace_sec)
 
     # Find similar-pace runs from last 30 days
-    runs = load_runs()
-    if runs.empty:
+    session = SessionLocal()
+    try:
+        runs = session.query(Run).all()
+    finally:
+        session.close()
+
+    if not runs:
         insight = f"Building your baseline at {pace_display}/mi. Log a few more runs and I'll start giving pace recommendations."
         if recovery_line:
             insight += f" {recovery_line}"
         return insight
 
-    runs["pace_sec"] = runs["pace_per_mile"].apply(pace_str_to_seconds)
-    runs = runs.dropna(subset=["pace_sec", "avg_hr"])
-    runs["avg_hr"] = pd.to_numeric(runs["avg_hr"], errors="coerce")
-    runs = runs.dropna(subset=["avg_hr"])
+    # Build a DataFrame from DB rows for the coaching logic
+    run_dicts = [r.to_dict() for r in runs]
+    df = pd.DataFrame(run_dicts)
+    df["date"] = pd.to_datetime(df["date"])
+    df["pace_sec"] = df["pace_per_mile"].apply(pace_str_to_seconds)
+    df = df.dropna(subset=["pace_sec", "avg_hr"])
+    df["avg_hr"] = pd.to_numeric(df["avg_hr"], errors="coerce")
+    df = df.dropna(subset=["avg_hr"])
 
     # Last 30 days, similar pace (within 30 sec/mi), exclude today
     cutoff = pd.Timestamp(today) - pd.Timedelta(days=30)
-    similar = runs[
-        (runs["date"] >= cutoff)
-        & (runs["date"] < pd.Timestamp(today))
-        & ((runs["pace_sec"] - today_pace_sec).abs() <= 30)
+    similar = df[
+        (df["date"] >= cutoff)
+        & (df["date"] < pd.Timestamp(today))
+        & ((df["pace_sec"] - today_pace_sec).abs() <= 30)
     ]
 
     if len(similar) >= 3:
@@ -289,35 +287,27 @@ def index():
 @require_auth
 def get_runs():
     """Return all runs as JSON, newest first."""
-    runs = load_runs()
-    runs = runs.sort_values("date", ascending=False)
-    # Convert to records, handling NaN
-    records = runs.where(runs.notna(), None).to_dict("records")
-    # Format dates as strings
-    for r in records:
-        if r.get("date") and hasattr(r["date"], "strftime"):
-            r["date"] = r["date"].strftime("%Y-%m-%d")
-    return jsonify(records)
+    session = SessionLocal()
+    try:
+        runs = session.query(Run).order_by(Run.date.desc()).all()
+        return jsonify([r.to_dict() for r in runs])
+    finally:
+        session.close()
 
 
 @app.route("/api/recovery/today", methods=["GET"])
 @require_auth
 def get_recovery_today():
     """Return today's recovery, fetching from Whoop if not cached."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    recovery = load_recovery()
+    today = date.today()
 
-    # Check if today is in CSV
-    if not recovery.empty:
-        today_rec = recovery[recovery["date"].dt.strftime("%Y-%m-%d") == today]
-        if not today_rec.empty:
-            row = today_rec.iloc[-1]
-            return jsonify({
-                "date": today,
-                "recovery_score": safe_float(row.get("recovery_score")),
-                "hrv": safe_float(row.get("hrv")),
-                "resting_hr": safe_float(row.get("resting_hr")),
-            })
+    session = SessionLocal()
+    try:
+        rec = session.query(Recovery).filter(Recovery.date == today).first()
+        if rec:
+            return jsonify(rec.to_dict())
+    finally:
+        session.close()
 
     # Fetch from Whoop API
     try:
@@ -329,7 +319,7 @@ def get_recovery_today():
         if recs:
             score = recs[-1].get("score", {})
             return jsonify({
-                "date": today,
+                "date": today.isoformat(),
                 "recovery_score": score.get("recovery_score"),
                 "hrv": score.get("hrv_rmssd_milli"),
                 "resting_hr": score.get("resting_heart_rate"),
@@ -337,45 +327,52 @@ def get_recovery_today():
     except Exception as e:
         print(f"Error fetching recovery: {e}")
 
-    return jsonify({"date": today, "recovery_score": None, "hrv": None, "resting_hr": None})
+    return jsonify({"date": today.isoformat(), "recovery_score": None, "hrv": None, "resting_hr": None})
 
 
 @app.route("/api/shoes", methods=["GET"])
 @require_auth
 def get_shoes():
     """Sum miles per shoe from runs that have a shoe value."""
-    runs = load_runs()
-    runs = runs[runs["shoes"].notna() & (runs["shoes"] != "")]
-    if runs.empty:
-        return jsonify([])
-
-    runs["distance_miles"] = pd.to_numeric(runs["distance_miles"], errors="coerce")
-    grouped = runs.groupby("shoes")["distance_miles"].sum().reset_index()
-    result = [{"name": r["shoes"], "miles": round(r["distance_miles"], 1)}
-              for _, r in grouped.iterrows()]
-    result.sort(key=lambda x: x["miles"], reverse=True)
-    return jsonify(result)
+    session = SessionLocal()
+    try:
+        results = (
+            session.query(Run.shoes, func.sum(Run.distance_miles))
+            .filter(Run.shoes.isnot(None), Run.shoes != "")
+            .group_by(Run.shoes)
+            .all()
+        )
+        shoes = [{"name": name, "miles": round(miles, 1)} for name, miles in results if miles]
+        shoes.sort(key=lambda x: x["miles"], reverse=True)
+        return jsonify(shoes)
+    finally:
+        session.close()
 
 
 @app.route("/api/trends", methods=["GET"])
 @require_auth
 def get_trends():
     """Return date, pace_seconds, avg_hr for runs with valid pace data."""
-    runs = load_runs()
-    runs["pace_sec"] = runs["pace_per_mile"].apply(pace_str_to_seconds)
-    runs["avg_hr"] = pd.to_numeric(runs["avg_hr"], errors="coerce")
-    valid = runs.dropna(subset=["pace_sec", "avg_hr"]).copy()
-    valid = valid[(valid["pace_sec"] > 0) & (valid["pace_sec"] < 900)]  # < 15 min/mi
-    valid = valid.sort_values("date")
+    session = SessionLocal()
+    try:
+        runs = (
+            session.query(Run)
+            .filter(Run.pace_per_mile.isnot(None), Run.avg_hr.isnot(None))
+            .order_by(Run.date)
+            .all()
+        )
+    finally:
+        session.close()
 
     result = []
-    for _, r in valid.iterrows():
-        d = r["date"]
-        result.append({
-            "date": d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d),
-            "pace_seconds": int(r["pace_sec"]),
-            "avg_hr": round(r["avg_hr"]),
-        })
+    for r in runs:
+        pace_sec = pace_str_to_seconds(r.pace_per_mile)
+        if pace_sec and 0 < pace_sec < 900:
+            result.append({
+                "date": r.date.isoformat(),
+                "pace_seconds": pace_sec,
+                "avg_hr": r.avg_hr,
+            })
     return jsonify(result)
 
 
@@ -383,13 +380,24 @@ def get_trends():
 @require_auth
 def get_snapshot():
     """Return last 7d vs last 30d averages."""
-    runs = load_runs()
-    recovery = load_recovery()
+    session = SessionLocal()
+    try:
+        runs = session.query(Run).all()
+        recoveries = session.query(Recovery).all()
+    finally:
+        session.close()
 
-    if runs.empty:
+    if not runs:
         return jsonify({"last_7d": {}, "last_30d": {}})
 
-    now = runs["date"].max()
+    run_df = pd.DataFrame([r.to_dict() for r in runs])
+    run_df["date"] = pd.to_datetime(run_df["date"])
+
+    rec_df = pd.DataFrame([r.to_dict() for r in recoveries]) if recoveries else pd.DataFrame()
+    if not rec_df.empty:
+        rec_df["date"] = pd.to_datetime(rec_df["date"])
+
+    now = run_df["date"].max()
     d7 = now - pd.Timedelta(days=7)
     d30 = now - pd.Timedelta(days=30)
 
@@ -413,19 +421,19 @@ def get_snapshot():
                 result["resting_hr"] = round(rhr.mean(), 1)
         return result
 
-    rec_7 = recovery[recovery["date"] >= d7] if not recovery.empty else None
-    rec_30 = recovery[recovery["date"] >= d30] if not recovery.empty else None
+    rec_7 = rec_df[rec_df["date"] >= d7] if not rec_df.empty else None
+    rec_30 = rec_df[rec_df["date"] >= d30] if not rec_df.empty else None
 
     return jsonify({
-        "last_7d": avg_metrics(runs[runs["date"] >= d7], rec_7),
-        "last_30d": avg_metrics(runs[runs["date"] >= d30], rec_30),
+        "last_7d": avg_metrics(run_df[run_df["date"] >= d7], rec_7),
+        "last_30d": avg_metrics(run_df[run_df["date"] >= d30], rec_30),
     })
 
 
 @app.route("/api/runs", methods=["POST"])
 @require_auth
 def log_run():
-    """Log a run: fetch Whoop data, generate coaching insight, save to CSV."""
+    """Log a run: fetch Whoop data, generate coaching insight, save to DB."""
     data = request.get_json()
     distance = float(data["distance_miles"])
     time_min = float(data["time_minutes"])
@@ -455,7 +463,7 @@ def log_run():
     except Exception as e:
         print(f"Error fetching recovery: {e}")
 
-    # Build row
+    # Build row dict (for coaching insight)
     if workout:
         score = workout.get("score", {})
         zones = score.get("zone_durations", {})
@@ -464,16 +472,16 @@ def log_run():
             "distance_miles": distance,
             "time_minutes": time_min,
             "pace_per_mile": pace,
-            "avg_hr": score.get("average_heart_rate", ""),
-            "max_hr": score.get("max_heart_rate", ""),
-            "strain": score.get("strain", ""),
-            "whoop_distance_meters": score.get("distance_meter", ""),
-            "zone_zero_milli": zones.get("zone_zero_milli", ""),
-            "zone_one_milli": zones.get("zone_one_milli", ""),
-            "zone_two_milli": zones.get("zone_two_milli", ""),
-            "zone_three_milli": zones.get("zone_three_milli", ""),
-            "zone_four_milli": zones.get("zone_four_milli", ""),
-            "zone_five_milli": zones.get("zone_five_milli", ""),
+            "avg_hr": score.get("average_heart_rate"),
+            "max_hr": score.get("max_heart_rate"),
+            "strain": score.get("strain"),
+            "whoop_distance_meters": score.get("distance_meter"),
+            "zone_zero_milli": zones.get("zone_zero_milli"),
+            "zone_one_milli": zones.get("zone_one_milli"),
+            "zone_two_milli": zones.get("zone_two_milli"),
+            "zone_three_milli": zones.get("zone_three_milli"),
+            "zone_four_milli": zones.get("zone_four_milli"),
+            "zone_five_milli": zones.get("zone_five_milli"),
             "shoes": shoe,
         }
     else:
@@ -482,22 +490,38 @@ def log_run():
             "distance_miles": distance,
             "time_minutes": time_min,
             "pace_per_mile": pace,
-            "avg_hr": "", "max_hr": "", "strain": "",
-            "whoop_distance_meters": "",
-            "zone_zero_milli": "", "zone_one_milli": "",
-            "zone_two_milli": "", "zone_three_milli": "",
-            "zone_four_milli": "", "zone_five_milli": "",
+            "avg_hr": None, "max_hr": None, "strain": None,
+            "whoop_distance_meters": None,
+            "zone_zero_milli": None, "zone_one_milli": None,
+            "zone_two_milli": None, "zone_three_milli": None,
+            "zone_four_milli": None, "zone_five_milli": None,
             "shoes": shoe,
         }
 
-    # Save to CSV
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    file_exists = RUNS_CSV.exists()
-    with open(RUNS_CSV, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
+    # Save to database
+    run = Run(
+        date=date.fromisoformat(today),
+        distance_miles=row["distance_miles"],
+        time_minutes=row["time_minutes"],
+        pace_per_mile=row["pace_per_mile"],
+        avg_hr=safe_int(row["avg_hr"]),
+        max_hr=safe_int(row["max_hr"]),
+        strain=safe_float(row["strain"]),
+        whoop_distance_meters=safe_float(row["whoop_distance_meters"]),
+        zone_zero_milli=safe_int(row["zone_zero_milli"]),
+        zone_one_milli=safe_int(row["zone_one_milli"]),
+        zone_two_milli=safe_int(row["zone_two_milli"]),
+        zone_three_milli=safe_int(row["zone_three_milli"]),
+        zone_four_milli=safe_int(row["zone_four_milli"]),
+        zone_five_milli=safe_int(row["zone_five_milli"]),
+        shoes=row["shoes"],
+    )
+    session = SessionLocal()
+    try:
+        session.add(run)
+        session.commit()
+    finally:
+        session.close()
 
     # Generate coaching insight
     insight = generate_coaching_insight(row, recovery_data)
