@@ -1,12 +1,11 @@
 """
 Run Intel analysis engine.
 
-Reads runs.csv and recovery.csv to produce running performance insights:
-  - Pace vs HR efficiency over time
-  - 7-day and 30-day rolling averages (pace, avg HR, strain)
-  - Cardiac drift detection (HR creeping up at same pace = fatigue)
-  - Recovery-to-performance correlation
-  - Per-shoe breakdown
+Reads runs.csv and recovery.csv to produce running performance insights.
+
+Two sections:
+  1. HISTORICAL ANALYSIS — all Whoop data (HR, strain, recovery, HRV, zones)
+  2. PACE ANALYSIS — only manually logged runs with valid pace data
 
 Usage:
     python src/trends.py
@@ -38,6 +37,15 @@ def load_data():
     return runs, recovery
 
 
+def fmt_pace(minutes):
+    """Format float minutes (7.817) as M:SS string (7:49)."""
+    if pd.isna(minutes) or minutes <= 0:
+        return "N/A"
+    m = int(minutes)
+    s = int((minutes - m) * 60)
+    return f"{m}:{s:02d}"
+
+
 def pace_to_minutes(pace_str):
     """Convert pace string like '7:49' to float minutes (7.817)."""
     if pd.isna(pace_str) or not isinstance(pace_str, str) or ":" not in pace_str:
@@ -46,19 +54,236 @@ def pace_to_minutes(pace_str):
     return int(parts[0]) + int(parts[1]) / 60
 
 
-def efficiency_analysis(runs):
-    """
-    Pace vs HR efficiency: lower HR at the same pace = better fitness.
-    Efficiency ratio = avg_hr / pace_minutes (lower is better).
-    """
+# ═══════════════════════════════════════════════════════════════════
+#  SECTION 1: HISTORICAL ANALYSIS (all Whoop data)
+# ═══════════════════════════════════════════════════════════════════
+
+
+def avg_hr_trend(runs):
+    """Monthly average heart rate trend across all runs."""
     print("\n" + "=" * 60)
-    print("  EFFICIENCY: Pace vs Heart Rate")
+    print("  AVG HEART RATE TREND (monthly)")
     print("=" * 60)
 
     df = runs.dropna(subset=["avg_hr"]).copy()
+    if len(df) < 2:
+        print("  Not enough HR data.\n")
+        return
+
+    df["month"] = df["date"].dt.to_period("M")
+    monthly = df.groupby("month")["avg_hr"].mean()
+
+    # Show last 6 months
+    recent = monthly.tail(6)
+    for period, hr in recent.items():
+        print(f"  {period}:  {hr:.0f} bpm")
+
+    # Overall trend
+    first_q = monthly.head(len(monthly) // 3).mean()
+    last_q = monthly.tail(len(monthly) // 3).mean()
+    diff = last_q - first_q
+    direction = "DOWN" if diff < 0 else "UP"
+    print(f"\n  Trend: {diff:+.0f} bpm ({direction}) from early to recent")
+    if diff < -2:
+        print("  Lower avg HR at same effort = improving fitness")
+    print()
+
+
+def resting_hr_trend(recovery):
+    """Monthly resting heart rate trend from recovery data."""
+    print("=" * 60)
+    print("  RESTING HEART RATE TREND (monthly)")
+    print("=" * 60)
+
+    if recovery is None or recovery.empty:
+        print("  No recovery data available.\n")
+        return
+
+    df = recovery.dropna(subset=["resting_hr"]).copy()
+    if len(df) < 2:
+        print("  Not enough data.\n")
+        return
+
+    df["month"] = df["date"].dt.to_period("M")
+    monthly = df.groupby("month")["resting_hr"].mean()
+
+    recent = monthly.tail(6)
+    for period, hr in recent.items():
+        print(f"  {period}:  {hr:.0f} bpm")
+
+    first_q = monthly.head(len(monthly) // 3).mean()
+    last_q = monthly.tail(len(monthly) // 3).mean()
+    diff = last_q - first_q
+    print(f"\n  Trend: {diff:+.0f} bpm from early to recent")
+    if diff < -2:
+        print("  Dropping resting HR = stronger cardiovascular system")
+    print()
+
+
+def hrv_trend(recovery):
+    """Monthly HRV trend from recovery data."""
+    print("=" * 60)
+    print("  HRV TREND (monthly)")
+    print("=" * 60)
+
+    if recovery is None or recovery.empty:
+        print("  No recovery data available.\n")
+        return
+
+    df = recovery.dropna(subset=["hrv"]).copy()
+    if len(df) < 2:
+        print("  Not enough data.\n")
+        return
+
+    df["month"] = df["date"].dt.to_period("M")
+    monthly = df.groupby("month")["hrv"].mean()
+
+    recent = monthly.tail(6)
+    for period, hrv in recent.items():
+        print(f"  {period}:  {hrv:.1f} ms")
+
+    first_q = monthly.head(len(monthly) // 3).mean()
+    last_q = monthly.tail(len(monthly) // 3).mean()
+    diff = last_q - first_q
+    print(f"\n  Trend: {diff:+.1f} ms from early to recent")
+    if diff > 2:
+        print("  Rising HRV = better recovery capacity")
+    print()
+
+
+def strain_load(runs):
+    """7-day and 30-day rolling average strain."""
+    print("=" * 60)
+    print("  STRAIN LOAD")
+    print("=" * 60)
+
+    df = runs.dropna(subset=["strain"]).set_index("date").copy()
+    if len(df) < 7:
+        print("  Not enough strain data.\n")
+        return
+
+    avg_7 = df["strain"].rolling("7D").mean().iloc[-1]
+    avg_30 = df["strain"].rolling("30D").mean().iloc[-1]
+
+    print(f"  7-day avg strain:  {avg_7:.1f}")
+    print(f"  30-day avg strain: {avg_30:.1f}")
+
+    if avg_7 > avg_30 * 1.2:
+        print("  Recent load is HIGH relative to your baseline.")
+    elif avg_7 < avg_30 * 0.8:
+        print("  Recent load is LOW — good recovery window or time to push.")
+    else:
+        print("  Load is steady.")
+    print()
+
+
+def recovery_trends(recovery):
+    """Recovery score trend over time."""
+    print("=" * 60)
+    print("  RECOVERY SCORE TRENDS")
+    print("=" * 60)
+
+    if recovery is None or recovery.empty:
+        print("  No recovery data available.\n")
+        return
+
+    df = recovery.dropna(subset=["recovery_score"]).copy()
+    if len(df) < 2:
+        print("  Not enough data.\n")
+        return
+
+    df["month"] = df["date"].dt.to_period("M")
+    monthly = df.groupby("month")["recovery_score"].mean()
+
+    recent = monthly.tail(6)
+    for period, score in recent.items():
+        print(f"  {period}:  {score:.0f}%")
+
+    # Count red/yellow/green days in last 30
+    last_30 = df[df["date"] >= df["date"].max() - pd.Timedelta(days=30)]
+    if not last_30.empty:
+        red = len(last_30[last_30["recovery_score"] < 34])
+        yellow = len(last_30[(last_30["recovery_score"] >= 34) & (last_30["recovery_score"] < 67)])
+        green = len(last_30[last_30["recovery_score"] >= 67])
+        print(f"\n  Last 30 days: {green} green, {yellow} yellow, {red} red")
+    print()
+
+
+def zone_distribution(runs):
+    """HR zone time distribution and how it's changed."""
+    print("=" * 60)
+    print("  HR ZONE DISTRIBUTION")
+    print("=" * 60)
+
+    zone_cols = [
+        "zone_zero_milli", "zone_one_milli", "zone_two_milli",
+        "zone_three_milli", "zone_four_milli", "zone_five_milli",
+    ]
+    zone_labels = ["Zone 0", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"]
+
+    df = runs.dropna(subset=zone_cols, how="all").copy()
+    if len(df) < 2:
+        print("  Not enough zone data.\n")
+        return
+
+    # Fill NaN zones with 0 for summing
+    for col in zone_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # Overall distribution
+    totals = df[zone_cols].sum()
+    grand_total = totals.sum()
+    if grand_total == 0:
+        print("  No zone time recorded.\n")
+        return
+
+    print("\n  Overall:")
+    for label, col in zip(zone_labels, zone_cols):
+        pct = totals[col] / grand_total * 100
+        bar = "#" * int(pct / 2)
+        print(f"    {label}: {pct:5.1f}%  {bar}")
+
+    # Compare first half vs second half
+    mid = len(df) // 2
+    if mid > 0:
+        early_totals = df.iloc[:mid][zone_cols].sum()
+        early_grand = early_totals.sum()
+        recent_totals = df.iloc[mid:][zone_cols].sum()
+        recent_grand = recent_totals.sum()
+
+        if early_grand > 0 and recent_grand > 0:
+            print("\n  Shift over time (early -> recent):")
+            for label, col in zip(zone_labels, zone_cols):
+                early_pct = early_totals[col] / early_grand * 100
+                recent_pct = recent_totals[col] / recent_grand * 100
+                diff = recent_pct - early_pct
+                if abs(diff) >= 1:
+                    arrow = "+" if diff > 0 else ""
+                    print(f"    {label}: {early_pct:.0f}% -> {recent_pct:.0f}% ({arrow}{diff:.0f}%)")
+    print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  SECTION 2: PACE ANALYSIS (manually logged runs only)
+# ═══════════════════════════════════════════════════════════════════
+
+
+def get_pace_runs(runs):
+    """Filter to only runs with valid manually-logged pace (> 0 and < 15 min/mi)."""
+    df = runs.copy()
     df["pace_min"] = df["pace_per_mile"].apply(pace_to_minutes)
     df = df.dropna(subset=["pace_min"])
+    df = df[(df["pace_min"] > 0) & (df["pace_min"] < 15)]
+    return df
 
+
+def efficiency_analysis(df):
+    """Pace vs HR efficiency: lower HR at the same pace = better fitness."""
+    print("=" * 60)
+    print("  EFFICIENCY: Pace vs Heart Rate")
+    print("=" * 60)
+
+    df = df.dropna(subset=["avg_hr"]).copy()
     if len(df) < 2:
         print("  Not enough data with HR for efficiency analysis.\n")
         return
@@ -79,47 +304,13 @@ def efficiency_analysis(runs):
     print(f"  (Lower ratio = better aerobic fitness)\n")
 
 
-def rolling_averages(runs):
-    """7-day and 30-day rolling averages for pace, HR, and strain."""
-    print("=" * 60)
-    print("  ROLLING AVERAGES")
-    print("=" * 60)
-
-    df = runs.set_index("date").copy()
-    df["pace_min"] = df["pace_per_mile"].apply(pace_to_minutes)
-
-    for col, label in [("pace_min", "Pace (min/mi)"), ("avg_hr", "Avg HR"), ("strain", "Strain")]:
-        if col not in df.columns:
-            continue
-        series = df[col].dropna()
-        if len(series) < 7:
-            print(f"\n  {label}: Not enough data for rolling averages.")
-            continue
-
-        avg_7 = series.rolling("7D").mean().iloc[-1]
-        avg_30 = series.rolling("30D").mean().iloc[-1] if len(series) >= 7 else None
-
-        print(f"\n  {label}:")
-        print(f"    7-day avg:  {avg_7:.1f}")
-        if avg_30 is not None:
-            print(f"    30-day avg: {avg_30:.1f}")
-
-    print()
-
-
-def cardiac_drift(runs):
-    """
-    Detect cardiac drift: is HR trending up at a similar pace?
-    This signals accumulated fatigue or overtraining.
-    """
+def cardiac_drift(df):
+    """Detect cardiac drift: is HR trending up at a similar pace?"""
     print("=" * 60)
     print("  CARDIAC DRIFT DETECTION")
     print("=" * 60)
 
-    df = runs.dropna(subset=["avg_hr"]).copy()
-    df["pace_min"] = df["pace_per_mile"].apply(pace_to_minutes)
-    df = df.dropna(subset=["pace_min"])
-
+    df = df.dropna(subset=["avg_hr"]).copy()
     if len(df) < 5:
         print("  Not enough data to detect cardiac drift.\n")
         return
@@ -129,7 +320,7 @@ def cardiac_drift(runs):
     similar = df[(df["pace_min"] >= median_pace - 0.25) & (df["pace_min"] <= median_pace + 0.25)]
 
     if len(similar) < 4:
-        print(f"  Not enough runs near your typical pace ({median_pace:.1f} min/mi).\n")
+        print(f"  Not enough runs near your typical pace ({fmt_pace(median_pace)}/mi).\n")
         return
 
     # Split into early and recent halves
@@ -138,8 +329,9 @@ def cardiac_drift(runs):
     recent_hr = similar.iloc[mid:]["avg_hr"].mean()
     diff = recent_hr - early_hr
 
-    pace_range = f"{median_pace - 0.25:.1f}-{median_pace + 0.25:.1f}"
-    print(f"  At similar pace ({pace_range} min/mi):")
+    pace_lo = fmt_pace(median_pace - 0.25)
+    pace_hi = fmt_pace(median_pace + 0.25)
+    print(f"  At similar pace ({pace_lo}-{pace_hi}/mi):")
     print(f"    Early avg HR:  {early_hr:.0f} bpm")
     print(f"    Recent avg HR: {recent_hr:.0f} bpm")
 
@@ -152,52 +344,12 @@ def cardiac_drift(runs):
     print()
 
 
-def recovery_correlation(runs, recovery):
-    """Check if higher recovery scores correlate with faster paces."""
-    print("=" * 60)
-    print("  RECOVERY vs PERFORMANCE")
-    print("=" * 60)
-
-    if recovery is None or recovery.empty:
-        print("  No recovery data available.\n")
-        return
-
-    df = runs.copy()
-    df["pace_min"] = df["pace_per_mile"].apply(pace_to_minutes)
-    df = df.dropna(subset=["pace_min"])
-
-    # Merge on date
-    merged = df.merge(recovery, on="date", how="inner")
-
-    if len(merged) < 5:
-        print("  Not enough overlapping data to analyze.\n")
-        return
-
-    # Split into high/low recovery days
-    median_rec = merged["recovery_score"].median()
-    high = merged[merged["recovery_score"] >= median_rec]
-    low = merged[merged["recovery_score"] < median_rec]
-
-    print(f"  Recovery median: {median_rec:.0f}%")
-    print(f"  High recovery days ({len(high)} runs): avg pace {high['pace_min'].mean():.2f} min/mi")
-    print(f"  Low recovery days ({len(low)} runs):  avg pace {low['pace_min'].mean():.2f} min/mi")
-
-    diff = low["pace_min"].mean() - high["pace_min"].mean()
-    if diff > 0.1:
-        print(f"  You run {diff:.2f} min/mi FASTER on high recovery days.")
-    else:
-        print(f"  Recovery doesn't strongly predict pace for you (yet).")
-    print()
-
-
-def shoe_analysis(runs):
+def shoe_analysis(df):
     """Average pace and HR by shoe model."""
     print("=" * 60)
     print("  SHOE BREAKDOWN")
     print("=" * 60)
 
-    df = runs.copy()
-    df["pace_min"] = df["pace_per_mile"].apply(pace_to_minutes)
     df = df[df["shoes"].notna() & (df["shoes"] != "")]
 
     if df.empty:
@@ -208,14 +360,16 @@ def shoe_analysis(runs):
         avg_pace = group["pace_min"].dropna().mean()
         avg_hr = group["avg_hr"].dropna().mean()
         count = len(group)
-        pace_str = f"{int(avg_pace)}:{int((avg_pace % 1) * 60):02d}" if pd.notna(avg_pace) else "N/A"
         hr_str = f"{avg_hr:.0f}" if pd.notna(avg_hr) else "N/A"
         print(f"\n  {shoe}:")
         print(f"    Runs: {count}")
-        print(f"    Avg pace: {pace_str}/mi")
+        print(f"    Avg pace: {fmt_pace(avg_pace)}/mi")
         print(f"    Avg HR:   {hr_str} bpm")
 
     print()
+
+
+# ═══════════════════════════════════════════════════════════════════
 
 
 def main():
@@ -227,11 +381,41 @@ def main():
     print(f"  RUN INTEL — {len(runs)} runs loaded")
     print(f"{'#' * 60}")
 
-    efficiency_analysis(runs)
-    rolling_averages(runs)
-    cardiac_drift(runs)
-    recovery_correlation(runs, recovery)
-    shoe_analysis(runs)
+    # ── Section 1: Historical analysis (all Whoop data) ───────────
+    print(f"\n{'─' * 60}")
+    print(f"  SECTION 1: HISTORICAL ANALYSIS ({len(runs)} runs)")
+    print(f"{'─' * 60}")
+
+    avg_hr_trend(runs)
+    resting_hr_trend(recovery)
+    hrv_trend(recovery)
+    strain_load(runs)
+    recovery_trends(recovery)
+    zone_distribution(runs)
+
+    # ── Section 2: Pace analysis (manually logged runs only) ──────
+    pace_runs = get_pace_runs(runs)
+
+    if len(pace_runs) == 0:
+        print(f"{'─' * 60}")
+        print(f"  SECTION 2: PACE ANALYSIS")
+        print(f"{'─' * 60}")
+        print("\n  No manually logged runs with pace data yet.")
+        print("  Pace analysis will appear here once you log runs.\n")
+    else:
+        print(f"{'─' * 60}")
+        print(f"  SECTION 2: PACE ANALYSIS ({len(pace_runs)} logged runs)")
+        print(f"{'─' * 60}")
+
+        efficiency_analysis(pace_runs)
+        cardiac_drift(pace_runs)
+        shoe_analysis(pace_runs)
+
+    # ── Footer ────────────────────────────────────────────────────
+    print("─" * 60)
+    print("  Log runs with: python3 src/log_run.py [miles] [minutes] [shoe]")
+    print("─" * 60)
+    print()
 
 
 if __name__ == "__main__":
