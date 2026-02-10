@@ -115,7 +115,7 @@ def generate_briefing(today_recovery, recovery_history, run_history):
         hrv_diff = hrv_today - hrv_30d_baseline
         if abs(hrv_diff) > 3:
             parts.append(
-                f"your HRV is {abs(hrv_diff):.0f}ms {'above' if hrv_diff > 0 else 'below'} baseline"
+                f"your HRV is {abs(hrv_diff):.0f}ms {'above' if hrv_diff > 0 else 'below'} your baseline"
             )
 
     if rhr_elevated and rhr_diff is not None:
