@@ -327,10 +327,25 @@ def get_briefing():
             except Exception as e:
                 print(f"Error fetching recovery for briefing: {e}")
 
+        # Fall back to most recent recovery if today's isn't available
+        if today_recovery["recovery_score"] is None:
+            latest = (
+                session.query(Recovery)
+                .filter(Recovery.recovery_score.isnot(None))
+                .order_by(Recovery.date.desc())
+                .first()
+            )
+            if latest:
+                today_recovery = {
+                    "recovery_score": latest.recovery_score,
+                    "hrv": latest.hrv,
+                    "resting_hr": latest.resting_hr,
+                }
+
         # Last 30 days of recovery
         recovery_rows = (
             session.query(Recovery)
-            .filter(Recovery.date >= cutoff_30d, Recovery.date < today)
+            .filter(Recovery.date >= cutoff_30d, Recovery.date <= today)
             .order_by(Recovery.date)
             .all()
         )
