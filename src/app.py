@@ -8,7 +8,7 @@ Usage:
     python src/app.py
 """
 
-import hashlib
+import hmac
 import os
 import secrets
 import sys
@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
 from sqlalchemy import func
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # Add src/ to path so we can import whoop
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,8 +27,11 @@ from database import Recovery, Run, SessionLocal, init_db
 from whoop import WhoopClient
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "runintel2026")
-# Token derived from the password — stored in cookie to validate sessions
-AUTH_TOKEN = hashlib.sha256(f"runintel:{APP_PASSWORD}".encode()).hexdigest()
+# Pre-hash for password verification (scrypt with salt)
+_PASSWORD_HASH = generate_password_hash(APP_PASSWORD)
+# HMAC-based session token using the app secret
+_SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
+AUTH_TOKEN = hmac.new(_SESSION_SECRET.encode(), APP_PASSWORD.encode(), "sha256").hexdigest()
 
 app = Flask(__name__, static_folder="static")
 app.secret_key = secrets.token_hex(32)
@@ -78,7 +82,8 @@ def require_auth(f):
     """Decorator: redirect to login if no valid auth cookie."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if request.cookies.get("auth_token") != AUTH_TOKEN:
+        token = request.cookies.get("auth_token", "")
+        if not hmac.compare_digest(token, AUTH_TOKEN):
             return redirect("/login")
         return f(*args, **kwargs)
     return decorated
@@ -87,16 +92,16 @@ def require_auth(f):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        # Already authed — go to dashboard
-        if request.cookies.get("auth_token") == AUTH_TOKEN:
+        token = request.cookies.get("auth_token", "")
+        if hmac.compare_digest(token, AUTH_TOKEN):
             return redirect("/")
         return LOGIN_HTML.replace("{error}", "")
-    # POST — check password
+    # POST — check password against scrypt hash
     password = request.form.get("password", "")
-    if password == APP_PASSWORD:
+    if check_password_hash(_PASSWORD_HASH, password):
         resp = make_response(redirect("/"))
         resp.set_cookie("auth_token", AUTH_TOKEN, max_age=60 * 60 * 24 * 30,
-                        httponly=True, samesite="Lax")
+                        httponly=True, samesite="Lax", secure=True)
         return resp
     return LOGIN_HTML.replace("{error}", '<div class="error">Wrong password.</div>')
 
