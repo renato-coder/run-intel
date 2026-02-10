@@ -324,6 +324,16 @@ def get_briefing():
                         "hrv": score.get("hrv_rmssd_milli"),
                         "resting_hr": score.get("resting_heart_rate"),
                     }
+                    # Cache to DB
+                    if today_recovery["recovery_score"] is not None:
+                        new_rec = Recovery(
+                            date=today,
+                            recovery_score=today_recovery["recovery_score"],
+                            hrv=today_recovery["hrv"],
+                            resting_hr=today_recovery["resting_hr"],
+                        )
+                        session.add(new_rec)
+                        session.commit()
             except Exception as e:
                 print(f"Error fetching recovery for briefing: {e}")
 
@@ -401,26 +411,36 @@ def get_recovery_today():
         rec = session.query(Recovery).filter(Recovery.date == today).first()
         if rec:
             return jsonify(rec.to_dict())
+
+        # Fetch from Whoop API
+        try:
+            client = WhoopClient()
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).isoformat()
+            recs = client.get_recovery(start=today_start)
+            if recs:
+                score = recs[-1].get("score", {})
+                data = {
+                    "recovery_score": score.get("recovery_score"),
+                    "hrv": score.get("hrv_rmssd_milli"),
+                    "resting_hr": score.get("resting_heart_rate"),
+                }
+                # Cache to DB
+                if data["recovery_score"] is not None:
+                    new_rec = Recovery(
+                        date=today,
+                        recovery_score=data["recovery_score"],
+                        hrv=data["hrv"],
+                        resting_hr=data["resting_hr"],
+                    )
+                    session.add(new_rec)
+                    session.commit()
+                return jsonify({"date": today.isoformat(), **data})
+        except Exception as e:
+            print(f"Error fetching recovery: {e}")
     finally:
         session.close()
-
-    # Fetch from Whoop API
-    try:
-        client = WhoopClient()
-        today_start = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).isoformat()
-        recs = client.get_recovery(start=today_start)
-        if recs:
-            score = recs[-1].get("score", {})
-            return jsonify({
-                "date": today.isoformat(),
-                "recovery_score": score.get("recovery_score"),
-                "hrv": score.get("hrv_rmssd_milli"),
-                "resting_hr": score.get("resting_heart_rate"),
-            })
-    except Exception as e:
-        print(f"Error fetching recovery: {e}")
 
     return jsonify({"date": today.isoformat(), "recovery_score": None, "hrv": None, "resting_hr": None})
 
