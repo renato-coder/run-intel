@@ -23,6 +23,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # Add src/ to path so we can import whoop
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from briefing import generate_briefing
 from database import Recovery, Run, SessionLocal, init_db
 from whoop import WhoopClient
 
@@ -286,6 +287,70 @@ def generate_coaching_insight(row, recovery_data):
 @require_auth
 def index():
     return send_from_directory("static", "index.html")
+
+
+@app.route("/api/briefing", methods=["GET"])
+@require_auth
+def get_briefing():
+    """Return the morning briefing based on recovery, HRV, and strain data."""
+    today = date.today()
+    cutoff_30d = today - timedelta(days=30)
+
+    # Get today's recovery — from DB or Whoop API
+    today_recovery = {"recovery_score": None, "hrv": None, "resting_hr": None}
+
+    session = SessionLocal()
+    try:
+        rec = session.query(Recovery).filter(Recovery.date == today).first()
+        if rec:
+            today_recovery = {
+                "recovery_score": rec.recovery_score,
+                "hrv": rec.hrv,
+                "resting_hr": rec.resting_hr,
+            }
+
+        # Fetch from Whoop if not in DB
+        if today_recovery["recovery_score"] is None:
+            try:
+                client = WhoopClient()
+                today_start = datetime.now(timezone.utc).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ).isoformat()
+                recs = client.get_recovery(start=today_start)
+                if recs:
+                    score = recs[-1].get("score", {})
+                    today_recovery = {
+                        "recovery_score": score.get("recovery_score"),
+                        "hrv": score.get("hrv_rmssd_milli"),
+                        "resting_hr": score.get("resting_heart_rate"),
+                    }
+            except Exception as e:
+                print(f"Error fetching recovery for briefing: {e}")
+
+        # Last 30 days of recovery
+        recovery_rows = (
+            session.query(Recovery)
+            .filter(Recovery.date >= cutoff_30d, Recovery.date < today)
+            .order_by(Recovery.date)
+            .all()
+        )
+        recovery_history = [r.to_dict() for r in recovery_rows]
+
+        # Last 30 days of runs (for strain)
+        run_rows = (
+            session.query(Run)
+            .filter(Run.date >= cutoff_30d, Run.date <= today)
+            .order_by(Run.date)
+            .all()
+        )
+        run_history = [{"date": r.date.isoformat(), "strain": r.strain} for r in run_rows]
+    finally:
+        session.close()
+
+    result = generate_briefing(today_recovery, recovery_history, run_history)
+    if result is None:
+        return jsonify({"status": "unavailable", "status_label": "No recovery data available yet."})
+    return jsonify(result)
 
 
 @app.route("/api/runs", methods=["GET"])
