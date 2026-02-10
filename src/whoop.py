@@ -108,10 +108,21 @@ class WhoopClient:
     # ── Token persistence ─────────────────────────────────────────────
 
     def _apply_token_data(self, data):
-        """Set in-memory token state from an OAuth response."""
+        """Set in-memory token state from an OAuth response and persist to file."""
         self.access_token = data["access_token"]
         self.refresh_token_value = data.get("refresh_token", self.refresh_token_value)
         self.token_expiry = time.time() + data.get("expires_in", 3600)
+        # Persist to file as well
+        try:
+            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(TOKEN_PATH, "w") as f:
+                json.dump({
+                    "access_token": self.access_token,
+                    "refresh_token": self.refresh_token_value,
+                    "token_expiry": self.token_expiry,
+                }, f, indent=2)
+        except Exception:
+            pass
 
     def _load_tokens_from_db(self):
         """Load the most recent tokens from the database. Returns True on success."""
@@ -152,17 +163,22 @@ class WhoopClient:
         self.token_expiry = data.get("token_expiry", 0)
 
     def _save_tokens_to_db(self):
-        """Save current tokens to the database."""
+        """Save current tokens to the database (upsert — single row)."""
         try:
             from database import SessionLocal, Token
             session = SessionLocal()
             try:
-                token = Token(
-                    access_token=self.access_token,
-                    refresh_token=self.refresh_token_value,
-                    expiry=self.token_expiry,
-                )
-                session.add(token)
+                existing = session.query(Token).first()
+                if existing:
+                    existing.access_token = self.access_token
+                    existing.refresh_token = self.refresh_token_value
+                    existing.expiry = self.token_expiry
+                else:
+                    session.add(Token(
+                        access_token=self.access_token,
+                        refresh_token=self.refresh_token_value,
+                        expiry=self.token_expiry,
+                    ))
                 session.commit()
             finally:
                 session.close()
