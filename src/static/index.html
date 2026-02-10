@@ -407,9 +407,17 @@
       );
     }
 
+    function formatRecoveryDate(isoDate) {
+      if (!isoDate) return null;
+      const d = new Date(isoDate + 'T00:00:00');
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return months[d.getMonth()] + ' ' + d.getDate();
+    }
+
     function MorningBriefing({ briefing }) {
       if (!briefing || briefing.status === 'unavailable') return null;
       const m = briefing.metrics || {};
+      const recDate = formatRecoveryDate(briefing.recovery_date);
       return (
         <div className="briefing-card" style={{ '--briefing-color': briefing.color }}>
           <div className="briefing-inner">
@@ -417,12 +425,15 @@
               {briefing.emoji} {briefing.headline}
             </div>
             <div className="briefing-summary">{briefing.summary}</div>
+            {briefing.note && (
+              <div style={{ fontSize: 12, color: '#FF8C00', marginBottom: 12 }}>{briefing.note}</div>
+            )}
             <div className="briefing-play">
               <div className="briefing-play-label">Today's Play</div>
               <div className="briefing-play-text">{briefing.play}</div>
             </div>
             <div className="briefing-metrics">
-              {m.recovery_score != null && <span className="briefing-metric">Recovery {m.recovery_score}%</span>}
+              {m.recovery_score != null && <span className="briefing-metric">Recovery {m.recovery_score}%{recDate ? ` (${recDate})` : ''}</span>}
               {m.hrv_today != null && <span className="briefing-metric">HRV {m.hrv_today}</span>}
               {m.rhr_today != null && <span className="briefing-metric">RHR {m.rhr_today}</span>}
               {m.hrv_7d_cv != null && <span className="briefing-metric">CV {m.hrv_7d_cv}%</span>}

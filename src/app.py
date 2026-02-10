@@ -12,6 +12,7 @@ import hmac
 import os
 import secrets
 import sys
+import threading
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -296,61 +297,74 @@ def get_briefing():
     today = date.today()
     cutoff_30d = today - timedelta(days=30)
 
-    # Get today's recovery — from DB or Whoop API
     today_recovery = {"recovery_score": None, "hrv": None, "resting_hr": None}
+    recovery_date = None
+    note = None
 
     session = SessionLocal()
     try:
-        rec = session.query(Recovery).filter(Recovery.date == today).first()
-        if rec:
-            today_recovery = {
-                "recovery_score": rec.recovery_score,
-                "hrv": rec.hrv,
-                "resting_hr": rec.resting_hr,
-            }
-
-        # Fetch from Whoop if not in DB
-        if today_recovery["recovery_score"] is None:
-            try:
-                client = WhoopClient()
-                today_start = datetime.now(timezone.utc).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                ).isoformat()
-                recs = client.get_recovery(start=today_start)
-                if recs:
-                    score = recs[-1].get("score", {})
-                    today_recovery = {
-                        "recovery_score": score.get("recovery_score"),
-                        "hrv": score.get("hrv_rmssd_milli"),
-                        "resting_hr": score.get("resting_heart_rate"),
-                    }
-                    # Cache to DB
-                    if today_recovery["recovery_score"] is not None:
-                        new_rec = Recovery(
+        # Always try Whoop API first for freshest data
+        whoop_fetched = False
+        try:
+            client = WhoopClient()
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).isoformat()
+            recs = client.get_recovery(start=today_start)
+            if recs:
+                score = recs[-1].get("score", {})
+                today_recovery = {
+                    "recovery_score": score.get("recovery_score"),
+                    "hrv": score.get("hrv_rmssd_milli"),
+                    "resting_hr": score.get("resting_heart_rate"),
+                }
+                if today_recovery["recovery_score"] is not None:
+                    whoop_fetched = True
+                    recovery_date = today.isoformat()
+                    # Cache to DB (upsert)
+                    existing = session.query(Recovery).filter(Recovery.date == today).first()
+                    if existing:
+                        existing.recovery_score = today_recovery["recovery_score"]
+                        existing.hrv = today_recovery["hrv"]
+                        existing.resting_hr = today_recovery["resting_hr"]
+                    else:
+                        session.add(Recovery(
                             date=today,
                             recovery_score=today_recovery["recovery_score"],
                             hrv=today_recovery["hrv"],
                             resting_hr=today_recovery["resting_hr"],
-                        )
-                        session.add(new_rec)
-                        session.commit()
-            except Exception as e:
-                print(f"Error fetching recovery for briefing: {e}")
+                        ))
+                    session.commit()
+        except Exception as e:
+            print(f"Error fetching recovery from Whoop: {e}")
 
-        # Fall back to most recent recovery if today's isn't available
-        if today_recovery["recovery_score"] is None:
-            latest = (
-                session.query(Recovery)
-                .filter(Recovery.recovery_score.isnot(None))
-                .order_by(Recovery.date.desc())
-                .first()
-            )
-            if latest:
+        # Fall back to DB if Whoop didn't return data
+        if not whoop_fetched:
+            # Try today's cached record first
+            rec = session.query(Recovery).filter(Recovery.date == today).first()
+            if rec and rec.recovery_score is not None:
                 today_recovery = {
-                    "recovery_score": latest.recovery_score,
-                    "hrv": latest.hrv,
-                    "resting_hr": latest.resting_hr,
+                    "recovery_score": rec.recovery_score,
+                    "hrv": rec.hrv,
+                    "resting_hr": rec.resting_hr,
                 }
+                recovery_date = today.isoformat()
+            else:
+                # Fall back to most recent recovery
+                latest = (
+                    session.query(Recovery)
+                    .filter(Recovery.recovery_score.isnot(None))
+                    .order_by(Recovery.date.desc())
+                    .first()
+                )
+                if latest:
+                    today_recovery = {
+                        "recovery_score": latest.recovery_score,
+                        "hrv": latest.hrv,
+                        "resting_hr": latest.resting_hr,
+                    }
+                    recovery_date = latest.date.isoformat()
+                    note = "Recovery not yet scored today. Showing most recent data."
 
         # Last 30 days of recovery
         recovery_rows = (
@@ -375,6 +389,9 @@ def get_briefing():
     result = generate_briefing(today_recovery, recovery_history, run_history)
     if result is None:
         return jsonify({"status": "unavailable", "status_label": "No recovery data available yet."})
+    result["recovery_date"] = recovery_date
+    if note:
+        result["note"] = note
     return jsonify(result)
 
 
@@ -643,6 +660,67 @@ def log_run():
 
     return jsonify({"run": row, "coaching_insight": insight})
 
+
+
+# ── Background Recovery Refresh ──────────────────────────────────
+
+REFRESH_INTERVAL = 30 * 60  # 30 minutes
+
+
+def _refresh_recovery():
+    """Fetch latest recovery from Whoop and store to DB."""
+    try:
+        client = WhoopClient()
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        recs = client.get_recovery(start=today_start)
+        if recs:
+            score = recs[-1].get("score", {})
+            recovery_score = score.get("recovery_score")
+            hrv = score.get("hrv_rmssd_milli")
+            resting_hr = score.get("resting_heart_rate")
+            if recovery_score is not None:
+                today = date.today()
+                session = SessionLocal()
+                try:
+                    existing = session.query(Recovery).filter(Recovery.date == today).first()
+                    if existing:
+                        existing.recovery_score = recovery_score
+                        existing.hrv = hrv
+                        existing.resting_hr = resting_hr
+                    else:
+                        session.add(Recovery(
+                            date=today,
+                            recovery_score=recovery_score,
+                            hrv=hrv,
+                            resting_hr=resting_hr,
+                        ))
+                    session.commit()
+                    print(f"[bg-refresh] Recovery updated: {recovery_score}%")
+                finally:
+                    session.close()
+            else:
+                print("[bg-refresh] Whoop returned no recovery score yet.")
+        else:
+            print("[bg-refresh] No recovery data from Whoop.")
+    except Exception as e:
+        print(f"[bg-refresh] Error: {e}")
+
+
+def _schedule_refresh():
+    """Run recovery refresh, then schedule the next one."""
+    _refresh_recovery()
+    t = threading.Timer(REFRESH_INTERVAL, _schedule_refresh)
+    t.daemon = True
+    t.start()
+
+
+# Start background refresh on app load
+_bg_thread = threading.Timer(5, _schedule_refresh)  # 5s delay to let app start
+_bg_thread.daemon = True
+_bg_thread.start()
+print("[bg-refresh] Background recovery refresh scheduled (every 30 min).")
 
 
 if __name__ == "__main__":
