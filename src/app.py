@@ -716,11 +716,24 @@ def _schedule_refresh():
     t.start()
 
 
-# Start background refresh on app load
-_bg_thread = threading.Timer(5, _schedule_refresh)  # 5s delay to let app start
-_bg_thread.daemon = True
-_bg_thread.start()
-print("[bg-refresh] Background recovery refresh scheduled (every 30 min).")
+def _start_background_refresh():
+    """Start background refresh after a delay to let the app fully boot."""
+    t = threading.Timer(30, _schedule_refresh)  # 30s delay for app to stabilize
+    t.daemon = True
+    t.start()
+    print("[bg-refresh] Background recovery refresh scheduled (every 30 min).")
+
+
+# Start background refresh on first request instead of module load
+_bg_started = False
+
+
+@app.before_request
+def _maybe_start_bg():
+    global _bg_started
+    if not _bg_started:
+        _bg_started = True
+        _start_background_refresh()
 
 
 if __name__ == "__main__":
