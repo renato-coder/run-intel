@@ -1,13 +1,15 @@
 # Run Intel
 
-Running performance tracker powered by Whoop biometric data. Logs runs with heart rate, strain, and HR zone data from your Whoop band, then analyzes trends over time.
+Running performance tracker powered by Whoop biometric data. Web dashboard with coaching insights, trend analysis, and morning briefings.
 
 ## Features
 
-- **OAuth2 Whoop integration** — securely connects to your Whoop account
-- **Run logging** — log distance, time, and shoe with auto-matched Whoop HR data
-- **Historical backfill** — pull your entire Whoop running and recovery history
-- **Trend analysis** — pace/HR efficiency, cardiac drift detection, rolling averages, recovery correlation, per-shoe breakdown
+- **Morning Briefing** — daily status with recovery-based training recommendations
+- **Coaching Insights** — AI-powered pace recommendations based on HR trends
+- **OAuth2 Whoop integration** — auto-pulls HR, strain, recovery, and zone data
+- **Trend Analysis** — pace vs HR chart, 7d vs 30d snapshot, cardiac drift detection
+- **Shoe Tracker** — mileage tracking with replacement alerts
+- **Run Logging** — log distance, time, and shoe with auto-matched Whoop workout
 
 ## Setup
 
@@ -16,58 +18,64 @@ Running performance tracker powered by Whoop biometric data. Logs runs with hear
 git clone <repo-url> && cd run-intel
 pip install -r requirements.txt
 
-# 2. Create .env with your Whoop API credentials
+# 2. Create .env with required configuration
+cat > .env <<EOF
+DATABASE_URL=postgresql://user:pass@host:5432/runintel
 WHOOP_CLIENT_ID=your_client_id
 WHOOP_CLIENT_SECRET=your_client_secret
 WHOOP_REDIRECT_URI=https://whoop.com
+APP_PASSWORD=your_secure_password
+SESSION_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))")
+EOF
 
 # 3. Authorize with Whoop (one-time)
 python src/auth.py
 
-# 4. Backfill historical data
-python src/backfill.py
+# 4. (Optional) Backfill from CSV if you have historical data
+python src/upload_history.py
 ```
 
 ## Usage
 
-### Log a run
+Start the web dashboard:
 
 ```bash
-# Basic: distance (miles) and time (minutes)
-python src/log_run.py 6.2 48.5
+# Development
+python src/app.py
 
-# With shoe tracking
-python src/log_run.py 6.2 48.5 alphafly
+# Production (via Procfile)
+gunicorn src.app:app --bind 0.0.0.0:$PORT
 ```
 
-Supported shoes: `alphafly`, `evosl`, `cloudmonster`, `zoomfly`
+Open the dashboard, log in with your `APP_PASSWORD`, and start logging runs.
 
-The logger automatically matches the closest Whoop running workout from today and pulls HR, strain, and zone data.
+## Environment Variables
 
-### Analyze trends
-
-```bash
-python src/trends.py
-```
-
-Outputs:
-- **Efficiency** — pace vs HR ratio over time (lower = fitter)
-- **Rolling averages** — 7-day and 30-day for pace, HR, strain
-- **Cardiac drift** — is your HR creeping up at the same pace? (fatigue signal)
-- **Recovery correlation** — do high Whoop recovery scores predict faster runs?
-- **Shoe breakdown** — avg pace and HR by shoe model
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `WHOOP_CLIENT_ID` | Yes | Whoop API client ID |
+| `WHOOP_CLIENT_SECRET` | Yes | Whoop API client secret |
+| `WHOOP_REDIRECT_URI` | Yes | OAuth redirect URI |
+| `APP_PASSWORD` | Yes | Dashboard login password |
+| `SESSION_SECRET` | Yes | Secret for session token signing |
+| `FLASK_DEBUG` | No | Set to `true` for debug mode (default: false) |
+| `PORT` | No | Server port (default: 5050) |
 
 ## Project Structure
 
 ```
 src/
-  whoop.py      Whoop API client (OAuth2, token refresh, pagination)
-  auth.py       One-time authorization script
-  log_run.py    Log a run with Whoop data
-  backfill.py   Pull all historical data
-  trends.py     Analysis engine
+  app.py              Flask web app (routes, auth, API endpoints)
+  config.py           Centralized configuration with validation
+  database.py         SQLAlchemy models and session management
+  whoop.py            Whoop API client (OAuth2, token refresh, pagination)
+  briefing.py         Morning briefing analysis engine
+  utils.py            Shared utility functions
+  auth.py             One-time Whoop authorization script
+  upload_history.py   CSV-to-database seeder
+  static/
+    index.html        React SPA frontend
 data/
-  tokens.json   OAuth tokens (gitignored)
-  runs.csv      Run log
-  recovery.csv  Recovery history
+  tokens.json         OAuth tokens (gitignored)
 ```

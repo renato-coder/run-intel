@@ -1,7 +1,9 @@
-requests
-python-dotenv
-pandas
-flask
-gunicorn
-psycopg2-binary
-sqlalchemy
+flask>=3.0,<4
+flask-limiter>=3.5,<4
+gunicorn>=21.2,<23
+sqlalchemy>=2.0,<3
+psycopg2-binary>=2.9,<3
+requests>=2.31,<3
+python-dotenv>=1.0,<2
+pandas>=2.0,<3
+werkzeug>=3.0,<4

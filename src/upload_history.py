@@ -3,38 +3,24 @@ Seed the PostgreSQL database from local CSV files.
 
 Usage:
     python src/upload_history.py
+
+NOTE: This truncates existing data before inserting. Safe to re-run.
 """
 
-import sys
+import logging
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
-# Add src/ to path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from database import Recovery, Run, SessionLocal, init_db
+from database import Recovery, Run, get_session, init_db
+from utils import safe_float, safe_int
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 RUNS_CSV = DATA_DIR / "runs.csv"
 RECOVERY_CSV = DATA_DIR / "recovery.csv"
-
-
-def safe_float(val):
-    try:
-        v = float(val)
-        return v if pd.notna(v) else None
-    except (ValueError, TypeError):
-        return None
-
-
-def safe_int(val):
-    if val is None or val == "":
-        return None
-    try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return None
 
 
 def upload_runs():
@@ -43,10 +29,11 @@ def upload_runs():
         return
 
     df = pd.read_csv(RUNS_CSV)
-    session = SessionLocal()
-    count = 0
+    with get_session() as session:
+        # Truncate before re-seeding to prevent duplicates
+        session.query(Run).delete()
+        count = 0
 
-    try:
         for _, row in df.iterrows():
             run = Run(
                 date=date.fromisoformat(str(row["date"]).split(" ")[0]),
@@ -68,10 +55,7 @@ def upload_runs():
             session.add(run)
             count += 1
 
-        session.commit()
-        print(f"Uploaded {count} runs.")
-    finally:
-        session.close()
+    print(f"Uploaded {count} runs.")
 
 
 def upload_recovery():
@@ -80,10 +64,11 @@ def upload_recovery():
         return
 
     df = pd.read_csv(RECOVERY_CSV)
-    session = SessionLocal()
-    count = 0
+    with get_session() as session:
+        # Truncate before re-seeding to prevent duplicates
+        session.query(Recovery).delete()
+        count = 0
 
-    try:
         for _, row in df.iterrows():
             rec = Recovery(
                 date=date.fromisoformat(str(row["date"]).split(" ")[0]),
@@ -94,13 +79,11 @@ def upload_recovery():
             session.add(rec)
             count += 1
 
-        session.commit()
-        print(f"Uploaded {count} recovery records.")
-    finally:
-        session.close()
+    print(f"Uploaded {count} recovery records.")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     print("Initializing database tables...")
     init_db()
 

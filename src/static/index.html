@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Run Intel</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script crossorigin="anonymous" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <style>
     /* ── Reset & Base ──────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -356,10 +357,13 @@
       zoomfly: 'Nike Zoom Fly 6',
     };
     const SHOE_KEYS = Object.keys(SHOE_DISPLAY);
-    const SHOE_MAX = 500; // max for progress bar scale
+    const SHOE_MAX = 500;
 
     // ── Helpers ──────────────────────────────────────────────────
-    const api = (path, opts) => fetch(path, opts).then(r => r.json());
+    const api = (path, opts) => fetch(path, {
+      ...opts,
+      headers: { ...(opts?.headers || {}), 'X-Requested-With': 'RunIntel' },
+    }).then(r => r.json());
 
     function secToPace(s) {
       if (!s || s <= 0) return 'N/A';
@@ -464,10 +468,14 @@
               shoe,
             }),
           });
-          setInsight(res.coaching_insight);
-          setDist('');
-          setTime('');
-          if (onLogged) onLogged();
+          if (res.error) {
+            setInsight('Error: ' + res.error);
+          } else {
+            setInsight(res.coaching_insight);
+            setDist('');
+            setTime('');
+            if (onLogged) onLogged();
+          }
         } catch (e) {
           setInsight('Error logging run. Check console.');
           console.error(e);
@@ -514,7 +522,6 @@
     }
 
     function ShoeTracker({ shoes }) {
-      // Build map from API data, default all shoes to 0
       const mileMap = {};
       SHOE_KEYS.forEach(k => { mileMap[k] = 0; });
       if (shoes) {

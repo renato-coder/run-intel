@@ -16,7 +16,7 @@ from whoop import WhoopClient
 def main():
     client = WhoopClient()
 
-    # Step 1: Generate and display the auth URL (includes CSRF state param)
+    # Step 1: Generate and display the auth URL
     auth_url, state = client.generate_auth_url()
     print("\n=== Whoop Authorization ===\n")
     print("1. Open this URL in your browser:\n")
@@ -36,7 +36,6 @@ def main():
         print("Make sure you pasted the complete redirect URL.")
         return
 
-    # Validate state to prevent CSRF attacks
     returned_state = query_params.get("state", [None])[0]
     if returned_state != state:
         print("\nError: OAuth state mismatch — possible CSRF attack.")
@@ -49,12 +48,12 @@ def main():
     print("\nExchanging code for tokens...")
     client.exchange_code(code)
 
-    # Step 5: Confirm success by fetching the user profile
+    # Step 5: Confirm success
     profile = client.get_profile()
     first = profile.get("first_name", "")
     last = profile.get("last_name", "")
     print(f"\nSuccess! Authenticated as {first} {last}.")
-    print("Tokens saved to data/tokens.json.\n")
+    print("Tokens saved.\n")
 
 
 if __name__ == "__main__":
