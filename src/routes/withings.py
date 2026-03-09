@@ -15,7 +15,9 @@ def withings_callback():
     """OAuth callback — exchange authorization code for tokens."""
     code = request.args.get("code")
     if not code:
-        return "Missing authorization code.", 400
+        # Withings tests the callback URL with a plain GET (no params).
+        # Must return 200 for their validation to pass.
+        return "OK", 200
 
     try:
         from withings import WithingsClient
