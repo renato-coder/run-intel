@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify
 
 from database import Recovery, Run, UserProfile, get_session
-from services.coaching import categorize_vo2max, compute_biological_age, compute_efficiency_factor, prescribe_workout
+from services.coaching import categorize_vo2max, compute_efficiency_factor, prescribe_workout
 from services.metrics_service import get_current_metrics
 from utils import pace_str_to_seconds
 
@@ -61,10 +61,6 @@ def get_longevity():
         profile = session.query(UserProfile).first()
         snapshot = get_current_metrics(session, profile)
 
-        # Extract profile values before session closes
-        profile_age = profile.age if profile else None
-        profile_sex = profile.sex if profile else None
-
         # RHR and HRV trends (last 90 days)
         recovery_rows = (
             session.query(Recovery)
@@ -81,43 +77,34 @@ def get_longevity():
             for r in recovery_rows if r.hrv is not None
         ]
 
-        # Extract latest RHR/HRV while session is open
-        latest_rhr = None
-        latest_hrv = None
-        for r in reversed(recovery_rows):
-            if latest_rhr is None and r.resting_hr is not None:
-                latest_rhr = float(r.resting_hr)
-            if latest_hrv is None and r.hrv is not None:
-                latest_hrv = float(r.hrv)
-            if latest_rhr is not None and latest_hrv is not None:
-                break
-
     vo2max = snapshot.estimated_vo2max
     category = categorize_vo2max(vo2max)
 
-    # Biological age computation
-    bio_age_data = None
-    if vo2max and profile_age and profile_sex:
-        result_ba = compute_biological_age(
-            vo2max=vo2max,
-            sex=profile_sex,
-            age=profile_age,
-            rhr=latest_rhr,
-            hrv=latest_hrv,
-        )
-        # Determine aging direction from VO2max trend
-        aging_direction = "stable"
-        if snapshot.ef_trend == "improving":
-            aging_direction = "improving"
-        elif snapshot.ef_trend == "declining":
-            aging_direction = "declining"
-        bio_age_data = {
-            "biological_age": result_ba.biological_age,
-            "chronological_age": result_ba.chronological_age,
-            "delta": result_ba.delta,
-            "aging_direction": aging_direction,
-            "disclaimer": result_ba.disclaimer,
-        }
+    # Compute trend directions: compare last 7 days vs prior 23 days (30d window)
+    def _trend_direction(points, lower_is_better):
+        if len(points) < 4:
+            return None, None, None
+        recent = [p["value"] for p in points[-7:]]
+        older = [p["value"] for p in points[:-7]]
+        if not recent or not older:
+            return None, None, None
+        avg_recent = sum(recent) / len(recent)
+        avg_older = sum(older) / len(older)
+        diff = avg_recent - avg_older
+        if lower_is_better:
+            direction = "improving" if diff < -1 else ("declining" if diff > 1 else "stable")
+        else:
+            direction = "improving" if diff > 1 else ("declining" if diff < -1 else "stable")
+        return direction, round(avg_recent, 1), round(diff, 1)
+
+    rhr_direction, rhr_current, rhr_change = _trend_direction(rhr_trend, lower_is_better=True)
+    hrv_direction, hrv_current, hrv_change = _trend_direction(hrv_trend, lower_is_better=False)
+
+    indicators = {
+        "rhr": {"direction": rhr_direction, "current": rhr_current, "change": rhr_change},
+        "hrv": {"direction": hrv_direction, "current": hrv_current, "change": hrv_change},
+        "vo2max": {"direction": snapshot.ef_trend, "current": vo2max, "category": category},
+    }
 
     return jsonify({
         "vo2max_estimate": vo2max,
@@ -129,7 +116,7 @@ def get_longevity():
         "ef_90d": snapshot.ef_90d,
         "rhr_trend": rhr_trend,
         "hrv_trend": hrv_trend,
-        "biological_age": bio_age_data,
+        "indicators": indicators,
     })
 
 

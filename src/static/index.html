@@ -1392,47 +1392,48 @@
       const z2Target = data?.zone2_target || 150;
       const rhrTrend = data?.rhr_trend || [];
       const hrvTrend = data?.hrv_trend || [];
-      const bioAge = data?.biological_age;
+      const ind = data?.indicators;
+
+      const trendIcon = (dir) => dir === 'improving' ? '\u2191' : dir === 'declining' ? '\u2193' : '\u2192';
+      const trendColor = (dir) => dir === 'improving' ? '#00F19F' : dir === 'declining' ? '#FF4D4D' : '#888';
 
       return (
         <>
-          {bioAge ? (
-            <div className="card" style={{ textAlign: 'center', padding: '32px 24px' }}>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: '#888', marginBottom: 8 }}>Biological Age</div>
-              <div className="mono" style={{ fontSize: 56, fontWeight: 700, lineHeight: 1, color: bioAge.delta <= 0 ? '#00F19F' : '#FF4D4D' }}>
-                {bioAge.biological_age}
-              </div>
-              <div style={{ marginTop: 8, marginBottom: 12 }}>
-                <span style={{
-                  display: 'inline-block',
-                  padding: '4px 12px',
-                  borderRadius: 20,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: bioAge.delta <= 0 ? '#00F19F20' : '#FF4D4D20',
-                  color: bioAge.delta <= 0 ? '#00F19F' : '#FF4D4D',
-                }}>
-                  {bioAge.delta <= 0 ? '' : '+'}{bioAge.delta} years vs chronological age {bioAge.chronological_age}
-                </span>
-              </div>
-              {bioAge.aging_direction && bioAge.aging_direction !== 'stable' && (
-                <div style={{ fontSize: 13, color: bioAge.aging_direction === 'improving' ? '#00F19F' : '#FF4D4D' }}>
-                  Trend: {bioAge.aging_direction === 'improving' ? 'Getting younger' : 'Getting older'}
+          {ind ? (
+            <div className="card" style={{ padding: '20px 24px' }}>
+              <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 }}>Longevity Indicators</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, textAlign: 'center' }}>
+                <div>
+                  <div className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{ind.rhr.current || '\u2014'}</div>
+                  <div className="dim text-sm">RHR (bpm)</div>
+                  {ind.rhr.direction && (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: trendColor(ind.rhr.direction), marginTop: 4 }}>
+                      {trendIcon(ind.rhr.direction)} {ind.rhr.change > 0 ? '+' : ''}{ind.rhr.change}
+                    </div>
+                  )}
                 </div>
-              )}
-              {bioAge.aging_direction === 'stable' && (
-                <div style={{ fontSize: 13, color: '#888' }}>Trend: Stable</div>
-              )}
-              <div style={{ fontSize: 11, color: '#555', marginTop: 8 }}>{bioAge.disclaimer}</div>
-            </div>
-          ) : (
-            <div className="card" style={{ textAlign: 'center', padding: '24px' }}>
-              <div style={{ color: '#888', marginBottom: 12 }}>
-                {!vo2 ? 'Need more run data with heart rate for biological age estimate.' : 'Set your sex and age in Settings to see your biological age.'}
+                <div>
+                  <div className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{ind.hrv.current || '\u2014'}</div>
+                  <div className="dim text-sm">HRV (ms)</div>
+                  {ind.hrv.direction && (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: trendColor(ind.hrv.direction), marginTop: 4 }}>
+                      {trendIcon(ind.hrv.direction)} {ind.hrv.change > 0 ? '+' : ''}{ind.hrv.change}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{ind.vo2max.current || '\u2014'}</div>
+                  <div className="dim text-sm">VO2max</div>
+                  {ind.vo2max.direction && (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: trendColor(ind.vo2max.direction), marginTop: 4 }}>
+                      {trendIcon(ind.vo2max.direction)} {ind.vo2max.direction}
+                    </div>
+                  )}
+                </div>
               </div>
-              <button className="btn btn-sm" onClick={() => setTab('settings')}>Go to Settings</button>
+              <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 12 }}>7-day avg vs prior 30 days. These are the key drivers of biological age.</div>
             </div>
-          )}
+          ) : null}
 
           <div className="card">
             <div className="card-header"><h2 className="green">VO2 MAX ESTIMATE</h2></div>
