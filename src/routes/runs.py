@@ -15,6 +15,8 @@ from utils import (
     safe_int,
     seconds_to_pace,
     today_utc_start,
+    validate_log_date,
+    whoop_query_window,
 )
 from whoop import WhoopClient
 
@@ -163,16 +165,21 @@ def log_run():
 
     shoe = data.get("shoe", "").lower().strip()
     pace = format_pace(time_min, distance)
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Use client-supplied local date (fixes UTC timezone bug)
+    log_date, date_err = validate_log_date(data.get("date"))
+    if date_err:
+        return jsonify({"error": date_err}), 400
+    today_str = log_date.isoformat()
 
     client = WhoopClient()
-    start = today_utc_start()
+    start = whoop_query_window(log_date)
 
     workout = None
     recovery_data = None
     try:
         workouts = client.get_workouts(start=start)
-        workout = find_closest_run(workouts)
+        workout = find_closest_run(workouts, target_date=log_date)
     except Exception:
         logger.exception("Error fetching workouts from Whoop")
     try:
@@ -212,7 +219,7 @@ def log_run():
 
     with get_session() as session:
         run = Run(
-            date=date.fromisoformat(today_str),
+            date=log_date,
             distance_miles=row["distance_miles"],
             time_minutes=row["time_minutes"],
             pace_per_mile=row["pace_per_mile"],

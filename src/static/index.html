@@ -481,6 +481,13 @@
       return r.json();
     });
 
+    function getLocalDateString(d = new Date()) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
     function secToPace(s) {
       if (!s || s <= 0) return 'N/A';
       const m = Math.floor(s / 60);
@@ -607,6 +614,7 @@
       const [dist, setDist] = useState('');
       const [time, setTime] = useState('');
       const [shoe, setShoe] = useState('alphafly');
+      const [runDate, setRunDate] = useState(getLocalDateString());
       const [loading, setLoading] = useState(false);
       const [insight, setInsight] = useState(null);
 
@@ -618,7 +626,7 @@
           const res = await api('/api/runs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ distance_miles: parseFloat(dist), time_minutes: parseFloat(time), shoe }),
+            body: JSON.stringify({ distance_miles: parseFloat(dist), time_minutes: parseFloat(time), shoe, date: runDate }),
           });
           if (res.error) {
             setInsight('Error: ' + res.error);
@@ -637,7 +645,7 @@
       return (
         <div className="card">
           <div className="card-header"><h2 className="green">LOG A RUN</h2></div>
-          <div className="form-row">
+          <div className="form-row" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr auto' }}>
             <div className="field">
               <label>Distance (mi)</label>
               <input type="number" step="0.1" placeholder="6.2" value={dist} onChange={e => setDist(e.target.value)} />
@@ -651,6 +659,10 @@
               <select value={shoe} onChange={e => setShoe(e.target.value)}>
                 {SHOE_KEYS.map(k => <option key={k} value={k}>{SHOE_DISPLAY[k]}</option>)}
               </select>
+            </div>
+            <div className="field">
+              <label>Date</label>
+              <input type="date" value={runDate} onChange={e => setRunDate(e.target.value)} />
             </div>
             <button className="btn" onClick={submit} disabled={loading || !dist || !time}>
               {loading ? <span className="spinner"></span> : 'Log Run'}
@@ -831,13 +843,13 @@
       const targetProtein = nt ? nt.protein_grams : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 0.9) : null);
       const dayType = nt?.day_type;
 
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = getLocalDateString();
       const todayLogs = logs.filter(l => l.date === todayStr);
       const todayCals = todayLogs.reduce((s, l) => s + l.calories, 0);
       const todayProtein = todayLogs.reduce((s, l) => s + l.protein_grams, 0);
 
       // 7-day rolling average
-      const last7d = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const last7d = getLocalDateString(new Date(Date.now() - 7 * 86400000));
       const weekLogs = logs.filter(l => l.date >= last7d);
       const uniqueDays7d = [...new Set(weekLogs.map(l => l.date))];
       const weekCals = weekLogs.reduce((s, l) => s + l.calories, 0);
@@ -860,7 +872,7 @@
           await api('/api/nutrition', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined }),
+            body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined, date: getLocalDateString() }),
           });
           setCalories(''); setProtein(''); setNotes('');
           api('/api/nutrition').then(setLogs).catch(console.error);
@@ -873,6 +885,7 @@
         setLogs(logs.filter(l => l.id !== id));
       };
 
+      const targetSource = nt?.target_source;
       const dayLabel = dayType === 'hard' ? 'Hard day (+cals)' : dayType === 'rest' ? 'Rest day (deficit)' : dayType === 'easy' ? 'Easy day' : null;
 
       return (
@@ -905,9 +918,10 @@
 
           {targetCals && (
             <>
-              {dayLabel && (
+              {(dayLabel || targetSource) && (
                 <div style={{ textAlign: 'center', margin: '12px 0 4px', fontSize: 12, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
-                  {dayLabel} — targets adjusted for today's workout
+                  {dayLabel && <span>{dayLabel} — targets adjusted for today's workout</span>}
+                  {targetSource === 'custom' && <span style={{ color: '#888', marginLeft: dayLabel ? 8 : 0 }}>(custom targets)</span>}
                 </div>
               )}
               <div className="two-col">
@@ -1039,22 +1053,46 @@
       const [entries, setEntries] = useState([]);
       const [weight, setWeight] = useState('');
       const [bf, setBf] = useState('');
+      const [photoFile, setPhotoFile] = useState(null);
+      const [photoPreview, setPhotoPreview] = useState(null);
+      const [viewingPhoto, setViewingPhoto] = useState(null);
       const [loading, setLoading] = useState(false);
 
       useEffect(() => {
         api('/api/body-comp').then(setEntries).catch(console.error);
       }, []);
 
+      const handlePhotoSelect = (e) => {
+        const file = e.target.files[0];
+        if (!file) { setPhotoFile(null); setPhotoPreview(null); return; }
+        if (file.size > 10 * 1024 * 1024) { alert('Photo must be under 10MB'); return; }
+        setPhotoFile(file);
+        const reader = new FileReader();
+        reader.onload = (ev) => setPhotoPreview(ev.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      const fileToBase64 = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
       const submit = async () => {
         if (!weight) return;
         setLoading(true);
         try {
+          const payload = { weight_lbs: parseFloat(weight), body_fat_pct: bf ? parseFloat(bf) : undefined, date: getLocalDateString() };
+          if (photoFile) {
+            payload.photo_base64 = await fileToBase64(photoFile);
+          }
           await api('/api/body-comp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ weight_lbs: parseFloat(weight), body_fat_pct: bf ? parseFloat(bf) : undefined }),
+            body: JSON.stringify(payload),
           });
-          setWeight(''); setBf('');
+          setWeight(''); setBf(''); setPhotoFile(null); setPhotoPreview(null);
           api('/api/body-comp').then(setEntries).catch(console.error);
         } catch (e) { console.error(e); }
         setLoading(false);
@@ -1074,7 +1112,7 @@
         if (entries.length < 2) return null;
         const sorted = [...entries].reverse();
         const latest = sorted[sorted.length - 1];
-        const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+        const weekAgo = getLocalDateString(new Date(Date.now() - 7 * 86400000));
         const older = sorted.find(e => e.date <= weekAgo);
         if (!older) return null;
         const daysDiff = (new Date(latest.date) - new Date(older.date)) / 86400000;
@@ -1113,6 +1151,18 @@
                 <label>Body Fat % (optional)</label>
                 <input type="number" step="0.1" placeholder="20.1" value={bf} onChange={e => setBf(e.target.value)} />
               </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: '#666', marginBottom: 6 }}>Progress Photo (optional)</label>
+              <input type="file" accept="image/jpeg,image/png" onChange={handlePhotoSelect}
+                style={{ fontSize: 13, color: '#888' }} />
+              {photoPreview && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={photoPreview} alt="Preview" style={{ maxHeight: 120, borderRadius: 8, border: '1px solid #2A2A2A' }} />
+                  <button className="btn-sm btn-outline" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                    style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>Remove</button>
+                </div>
+              )}
             </div>
             <button className="btn" onClick={submit} disabled={loading || !weight} style={{ width: '100%' }}>
               {loading ? <span className="spinner"></span> : 'Log'}
@@ -1174,12 +1224,27 @@
             {entries.slice(0, 20).map(e => (
               <div key={e.id} className="metric-row">
                 <span className="metric-label">{e.date}</span>
-                <span className="mono" style={{ fontSize: 13 }}>{e.weight_lbs} lbs{e.body_fat_pct != null ? ` / ${e.body_fat_pct}% BF` : ''}</span>
+                <span className="mono" style={{ fontSize: 13 }}>
+                  {e.weight_lbs} lbs{e.body_fat_pct != null ? ` / ${e.body_fat_pct}% BF` : ''}
+                  {e.has_photo && (
+                    <button onClick={() => setViewingPhoto(`/api/body-comp/${e.id}/photo`)}
+                      style={{ background: 'none', border: 'none', color: '#00F19F', cursor: 'pointer', marginLeft: 8, fontSize: 12 }}>
+                      View Photo
+                    </button>
+                  )}
+                </span>
                 <button className="btn-sm btn-outline" onClick={() => deleteEntry(e.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
               </div>
             ))}
             {entries.length === 0 && <div className="dim">No entries yet</div>}
           </div>
+
+          {viewingPhoto && (
+            <div onClick={() => setViewingPhoto(null)}
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer' }}>
+              <img src={viewingPhoto} alt="Progress photo" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 12 }} />
+            </div>
+          )}
         </>
       );
     }
@@ -1260,9 +1325,41 @@
       const z2Target = data?.zone2_target || 150;
       const rhrTrend = data?.rhr_trend || [];
       const hrvTrend = data?.hrv_trend || [];
+      const bioAge = data?.biological_age;
 
       return (
         <>
+          {bioAge && (
+            <div className="card" style={{ textAlign: 'center', padding: '32px 24px' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: '#888', marginBottom: 8 }}>Biological Age</div>
+              <div className="mono" style={{ fontSize: 56, fontWeight: 700, lineHeight: 1, color: bioAge.delta <= 0 ? '#00F19F' : '#FF4D4D' }}>
+                {bioAge.biological_age}
+              </div>
+              <div style={{ marginTop: 8, marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block',
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: bioAge.delta <= 0 ? '#00F19F20' : '#FF4D4D20',
+                  color: bioAge.delta <= 0 ? '#00F19F' : '#FF4D4D',
+                }}>
+                  {bioAge.delta <= 0 ? '' : '+'}{bioAge.delta} years vs chronological age {bioAge.chronological_age}
+                </span>
+              </div>
+              {bioAge.aging_direction && bioAge.aging_direction !== 'stable' && (
+                <div style={{ fontSize: 13, color: bioAge.aging_direction === 'improving' ? '#00F19F' : '#FF4D4D' }}>
+                  Trend: {bioAge.aging_direction === 'improving' ? 'Getting younger' : 'Getting older'}
+                </div>
+              )}
+              {bioAge.aging_direction === 'stable' && (
+                <div style={{ fontSize: 13, color: '#888' }}>Trend: Stable</div>
+              )}
+              <div style={{ fontSize: 11, color: '#555', marginTop: 8 }}>{bioAge.disclaimer}</div>
+            </div>
+          )}
+
           <div className="card">
             <div className="card-header"><h2 className="green">VO2 MAX ESTIMATE</h2></div>
             {vo2 ? (
@@ -1358,8 +1455,9 @@
     // ── Settings Tab ──────────────────────────────────────────────
     function SettingsTab({ profile, onSave }) {
       const [form, setForm] = useState({
-        age: '', height_inches: '', weight_lbs: '', max_hr: '', body_fat_pct: '',
+        age: '', sex: '', height_inches: '', weight_lbs: '', max_hr: '', body_fat_pct: '',
         goal_marathon_time_min: '', goal_body_fat_pct: '', goal_weight_lbs: '',
+        goal_calorie_target: '', goal_protein_target_grams: '',
       });
       const [saving, setSaving] = useState(false);
       const [saved, setSaved] = useState(false);
@@ -1368,6 +1466,7 @@
         if (profile) {
           setForm({
             age: profile.age || '',
+            sex: profile.sex || '',
             height_inches: profile.height_inches || '',
             weight_lbs: profile.weight_lbs || '',
             max_hr: profile.max_hr || '',
@@ -1375,6 +1474,8 @@
             goal_marathon_time_min: profile.goal_marathon_time_min || '',
             goal_body_fat_pct: profile.goal_body_fat_pct || '',
             goal_weight_lbs: profile.goal_weight_lbs || '',
+            goal_calorie_target: profile.goal_calorie_target || '',
+            goal_protein_target_grams: profile.goal_protein_target_grams || '',
           });
         }
       }, [profile]);
@@ -1383,7 +1484,12 @@
         setSaving(true); setSaved(false);
         try {
           const data = {};
-          Object.entries(form).forEach(([k, v]) => { if (v !== '' && v != null) data[k] = Number(v); });
+          Object.entries(form).forEach(([k, v]) => {
+            if (v === '' || v == null) return;
+            data[k] = k === 'sex' ? v : Number(v);
+          });
+          // Send sex as string, not number
+          if (form.sex === '') data.sex = null;
           await api('/api/profile', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -1401,6 +1507,11 @@
         onChange: e => setForm({ ...form, [key]: e.target.value }),
       });
 
+      // Auto-calculated nutrition targets for display
+      const weight = parseFloat(form.weight_lbs) || null;
+      const autoCalories = weight ? Math.round(weight * 13) : null;
+      const autoProtein = weight ? Math.round(weight * 0.9) : null;
+
       return (
         <div className="card">
           <div className="card-header"><h2 className="green">PROFILE & GOALS</h2></div>
@@ -1408,6 +1519,14 @@
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Body</h3>
           <div className="form-grid-3" style={{ marginBottom: 20 }}>
             <div className="field"><label>Age</label><input type="number" placeholder="34" {...f('age')} /></div>
+            <div className="field">
+              <label>Sex</label>
+              <select {...f('sex')}>
+                <option value="">—</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
             <div className="field"><label>Height (inches)</label><input type="number" placeholder="73" {...f('height_inches')} /></div>
             <div className="field"><label>Weight (lbs)</label><input type="number" step="0.1" placeholder="200" {...f('weight_lbs')} /></div>
             <div className="field"><label>Max HR</label><input type="number" placeholder="Auto from age" {...f('max_hr')} /></div>
@@ -1419,6 +1538,16 @@
             <div className="field"><label>Marathon Time (min)</label><input type="number" placeholder="180" {...f('goal_marathon_time_min')} /></div>
             <div className="field"><label>Target Body Fat %</label><input type="number" step="0.1" placeholder="16" {...f('goal_body_fat_pct')} /></div>
             <div className="field"><label>Target Weight (lbs)</label><input type="number" step="0.1" placeholder="185" {...f('goal_weight_lbs')} /></div>
+          </div>
+
+          <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Nutrition Targets</h3>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+            Leave blank to use auto-calculated targets{autoCalories ? ` (${autoCalories} cal / ${autoProtein}g protein based on weight)` : ''}.
+            Custom values override the auto calculation.
+          </div>
+          <div className="form-grid-2" style={{ marginBottom: 20 }}>
+            <div className="field"><label>Daily Calorie Target</label><input type="number" placeholder={autoCalories ? `Auto: ${autoCalories}` : '2500'} {...f('goal_calorie_target')} /></div>
+            <div className="field"><label>Daily Protein Target (g)</label><input type="number" placeholder={autoProtein ? `Auto: ${autoProtein}` : '180'} {...f('goal_protein_target_grams')} /></div>
           </div>
 
           <button className="btn" onClick={save} disabled={saving} style={{ width: '100%' }}>
@@ -1441,13 +1570,15 @@
       const [profile, setProfile] = useState(null);
 
       const loadAll = useCallback(() => {
-        api('/api/runs').then(setRuns).catch(e => console.error('Failed to load runs:', e));
-        api('/api/recovery/today').then(setRecovery).catch(e => console.error('Failed to load recovery:', e));
-        api('/api/shoes').then(setShoes).catch(e => console.error('Failed to load shoes:', e));
-        api('/api/trends').then(setTrends).catch(e => console.error('Failed to load trends:', e));
-        api('/api/snapshot').then(setSnapshot).catch(e => console.error('Failed to load snapshot:', e));
-        api('/api/briefing').then(setBriefing).catch(e => console.error('Failed to load briefing:', e));
-        api('/api/profile').then(setProfile).catch(e => console.error('Failed to load profile:', e));
+        Promise.allSettled([
+          api('/api/runs').then(setRuns),
+          api('/api/recovery/today').then(setRecovery),
+          api('/api/shoes').then(setShoes),
+          api('/api/trends').then(setTrends),
+          api('/api/snapshot').then(setSnapshot),
+          api('/api/briefing').then(setBriefing),
+          api('/api/profile').then(setProfile),
+        ]).catch(() => {});
       }, []);
 
       useEffect(() => { loadAll(); }, [loadAll]);

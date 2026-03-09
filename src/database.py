@@ -8,9 +8,9 @@ import logging
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import CheckConstraint, Column, Date, DateTime, Float, Index, Integer, Numeric, String, Text, create_engine
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, Float, Index, Integer, LargeBinary, Numeric, String, Text, create_engine, text
 from sqlalchemy.sql import func as sa_func
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, deferred, sessionmaker
 
 from config import DATABASE_URL
 
@@ -29,12 +29,14 @@ Base = declarative_base()
 
 
 class _SerializableMixin:
-    """Auto-serialize all columns (except id) to a dict."""
+    """Auto-serialize all columns (except id and excluded) to a dict."""
+
+    _exclude_from_dict: set = set()
 
     def to_dict(self) -> dict:
         result = {}
         for c in self.__table__.columns:
-            if c.name == "id":
+            if c.name == "id" or c.name in self._exclude_from_dict:
                 continue
             val = getattr(self, c.name)
             if hasattr(val, "isoformat"):
@@ -99,6 +101,9 @@ class UserProfile(Base):
     goal_body_fat_pct = Column(Numeric(4, 1), CheckConstraint("goal_body_fat_pct >= 3 AND goal_body_fat_pct <= 60"))
     goal_weight_lbs = Column(Numeric(5, 1), CheckConstraint("goal_weight_lbs >= 50 AND goal_weight_lbs <= 500"))
     goal_target_date = Column(Date)
+    goal_calorie_target = Column(Integer, CheckConstraint("goal_calorie_target >= 800 AND goal_calorie_target <= 10000"))
+    goal_protein_target_grams = Column(Integer, CheckConstraint("goal_protein_target_grams >= 20 AND goal_protein_target_grams <= 500"))
+    sex = Column(String(10), CheckConstraint("sex IN ('male', 'female')"))
     created_at = Column(DateTime, server_default=sa_func.now())
     updated_at = Column(DateTime, server_default=sa_func.now(), onupdate=sa_func.now())
 
@@ -114,6 +119,9 @@ class UserProfile(Base):
             "goal_body_fat_pct": float(self.goal_body_fat_pct) if self.goal_body_fat_pct else None,
             "goal_weight_lbs": float(self.goal_weight_lbs) if self.goal_weight_lbs else None,
             "goal_target_date": self.goal_target_date.isoformat() if self.goal_target_date else None,
+            "goal_calorie_target": self.goal_calorie_target,
+            "goal_protein_target_grams": self.goal_protein_target_grams,
+            "sex": self.sex,
         }
 
 
@@ -133,11 +141,14 @@ class BodyComp(_SerializableMixin, Base):
     __tablename__ = "body_comp"
     __table_args__ = (Index("ix_body_comp_date", "date"),)
 
+    _exclude_from_dict = {"photo"}
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False)
     weight_lbs = Column(Numeric(5, 1), nullable=False)
     body_fat_pct = Column(Numeric(4, 1))
     notes = Column(Text)
+    photo = deferred(Column(LargeBinary))
     created_at = Column(DateTime, server_default=sa_func.now())
 
 
@@ -155,6 +166,30 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
+def _run_migrations(eng):
+    """Idempotent column additions. create_all() won't add these to existing tables."""
+    columns = [
+        "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goal_calorie_target INTEGER",
+        "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goal_protein_target_grams INTEGER",
+        "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sex VARCHAR(10)",
+        "ALTER TABLE body_comp ADD COLUMN IF NOT EXISTS photo BYTEA",
+    ]
+    constraints = [
+        "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_cal_target CHECK (goal_calorie_target >= 800 AND goal_calorie_target <= 10000)",
+        "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_protein_target CHECK (goal_protein_target_grams >= 20 AND goal_protein_target_grams <= 500)",
+        "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_sex CHECK (sex IN ('male', 'female'))",
+    ]
+    with eng.begin() as conn:
+        for sql in columns:
+            conn.execute(text(sql))
+        for sql in constraints:
+            conn.execute(text(f"DO $$ BEGIN {sql}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;"))
+
+
 def init_db():
-    """Create all tables if they don't exist."""
+    """Create all tables + add any columns missing from existing tables."""
     Base.metadata.create_all(engine)
+    try:
+        _run_migrations(engine)
+    except Exception:
+        logger.warning("Migration failed (may be expected on fresh DB)", exc_info=True)

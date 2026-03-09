@@ -30,7 +30,8 @@ def update_profile():
     allowed = {
         "age", "height_inches", "weight_lbs", "max_hr", "body_fat_pct",
         "goal_marathon_time_min", "goal_body_fat_pct", "goal_weight_lbs",
-        "goal_target_date",
+        "goal_target_date", "goal_calorie_target", "goal_protein_target_grams",
+        "sex",
     }
     updates = {k: v for k, v in data.items() if k in allowed}
 
@@ -41,8 +42,14 @@ def update_profile():
         except (ValueError, TypeError):
             return jsonify({"error": "goal_target_date must be YYYY-MM-DD format"}), 400
 
+    # Validate sex field
+    if "sex" in updates and updates["sex"] not in (None, "", "male", "female"):
+        return jsonify({"error": "sex must be 'male' or 'female'"}), 400
+    if "sex" in updates and updates["sex"] == "":
+        updates["sex"] = None
+
     # Coerce numeric fields
-    int_fields = {"age", "height_inches", "max_hr"}
+    int_fields = {"age", "height_inches", "max_hr", "goal_calorie_target", "goal_protein_target_grams"}
     numeric_fields = {"weight_lbs", "body_fat_pct", "goal_marathon_time_min", "goal_body_fat_pct", "goal_weight_lbs"}
     for k in list(updates.keys()):
         if updates[k] is None or updates[k] == "":

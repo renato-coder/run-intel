@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify
 
 from database import Recovery, Run, UserProfile, get_session
-from services.coaching import compute_efficiency_factor, prescribe_workout
+from services.coaching import categorize_vo2max, compute_biological_age, compute_efficiency_factor, prescribe_workout
 from services.metrics_service import get_current_metrics
 from utils import pace_str_to_seconds
 
@@ -77,18 +77,41 @@ def get_longevity():
         ]
 
     vo2max = snapshot.estimated_vo2max
-    category = None
-    if vo2max:
-        if vo2max >= 50:
-            category = "Elite"
-        elif vo2max >= 45:
-            category = "Above Average"
-        elif vo2max >= 40:
-            category = "Average"
-        elif vo2max >= 35:
-            category = "Below Average"
-        else:
-            category = "Low"
+    category = categorize_vo2max(vo2max)
+
+    # Biological age computation
+    bio_age_data = None
+    if vo2max and profile and profile.age and profile.sex:
+        latest_rhr = None
+        latest_hrv = None
+        if recovery_rows:
+            for r in reversed(recovery_rows):
+                if latest_rhr is None and r.resting_hr is not None:
+                    latest_rhr = float(r.resting_hr)
+                if latest_hrv is None and r.hrv is not None:
+                    latest_hrv = float(r.hrv)
+                if latest_rhr is not None and latest_hrv is not None:
+                    break
+        result_ba = compute_biological_age(
+            vo2max=vo2max,
+            sex=profile.sex,
+            age=profile.age,
+            rhr=latest_rhr,
+            hrv=latest_hrv,
+        )
+        # Determine aging direction from VO2max trend
+        aging_direction = "stable"
+        if snapshot.ef_trend == "improving":
+            aging_direction = "improving"
+        elif snapshot.ef_trend == "declining":
+            aging_direction = "declining"
+        bio_age_data = {
+            "biological_age": result_ba.biological_age,
+            "chronological_age": result_ba.chronological_age,
+            "delta": result_ba.delta,
+            "aging_direction": aging_direction,
+            "disclaimer": result_ba.disclaimer,
+        }
 
     return jsonify({
         "vo2max_estimate": vo2max,
@@ -100,6 +123,7 @@ def get_longevity():
         "ef_90d": snapshot.ef_90d,
         "rhr_trend": rhr_trend,
         "hrv_trend": hrv_trend,
+        "biological_age": bio_age_data,
     })
 
 

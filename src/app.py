@@ -31,6 +31,7 @@ AUTH_TOKEN = hmac.new(SESSION_SECRET.encode(), APP_PASSWORD.encode(), "sha256").
 
 app = Flask(__name__, static_folder="static")
 app.secret_key = SESSION_SECRET
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB upload limit
 
 limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
 
@@ -148,6 +149,11 @@ def index():
 
 
 # ── Error handler ─────────────────────────────────────────────────
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": "Upload exceeds 10MB limit"}), 413
+
 
 @app.errorhandler(Exception)
 def handle_exception(e):

@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify
 
 from briefing import generate_briefing
 from database import BodyComp, NutritionLog, Recovery, Run, UserProfile, get_session
-from services.coaching import prescribe_workout
+from services.coaching import categorize_vo2max, prescribe_workout
 from services.metrics_service import get_current_metrics
 
 bp = Blueprint("briefing", __name__)
@@ -183,25 +183,40 @@ def get_briefing():
             progress["ef_change_30d_pct"] = round((metrics.ef_30d - metrics.ef_90d) / metrics.ef_90d * 100, 1)
         result["pace_progress"] = progress
 
-    # Add nutrition target (adjusted by training day type)
+    # Add nutrition target (custom or auto-calculated by training day type)
     result["nutrition_target"] = None
     if profile_data.get("weight_lbs"):
         weight = profile_data["weight_lbs"]
-        target_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
-        # Caloric target scales with workout intensity
+        auto_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
+        # Auto-calculated targets scale with workout intensity
         if rx.type in ("tempo", "intervals", "long"):
-            target_cals = int(weight * 15)  # maintenance on hard days
+            auto_cals = int(weight * 15)  # maintenance on hard days
             day_type = "hard"
         elif rx.type == "rest":
-            target_cals = int(weight * 11)  # larger deficit on rest days
+            auto_cals = int(weight * 11)  # larger deficit on rest days
             day_type = "rest"
         else:
-            target_cals = int(weight * 13)  # moderate deficit on easy days
+            auto_cals = int(weight * 13)  # moderate deficit on easy days
             day_type = "easy"
+
+        custom_cals = profile_data.get("goal_calorie_target")
+        custom_protein = profile_data.get("goal_protein_target_grams")
+        if custom_cals or custom_protein:
+            target_cals = custom_cals or auto_cals
+            target_protein = custom_protein or auto_protein
+            target_source = "custom"
+        else:
+            target_cals = auto_cals
+            target_protein = auto_protein
+            target_source = "auto"
+
         result["nutrition_target"] = {
             "calories": target_cals,
             "protein_grams": target_protein,
             "day_type": day_type,
+            "target_source": target_source,
+            "auto_calories": auto_cals,
+            "auto_protein_grams": auto_protein,
             "yesterday": {
                 "calories": yesterday_cals,
                 "protein_grams": yesterday_protein,
@@ -228,7 +243,7 @@ def get_briefing():
     result["longevity"] = None
     if metrics.estimated_vo2max:
         vo2 = metrics.estimated_vo2max
-        category = "Elite" if vo2 >= 50 else "Above Average" if vo2 >= 45 else "Average" if vo2 >= 40 else "Below Average" if vo2 >= 35 else "Low"
+        category = categorize_vo2max(vo2)
         result["longevity"] = {
             "vo2max_estimate": vo2,
             "vo2max_category": category,
