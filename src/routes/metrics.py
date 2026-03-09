@@ -19,6 +19,7 @@ def get_metrics():
     with get_session() as session:
         profile = session.query(UserProfile).first()
         snapshot = get_current_metrics(session, profile)
+        max_hr = profile.max_hr if profile else None
 
     result = asdict(snapshot)
 
@@ -28,7 +29,7 @@ def get_metrics():
         tsb=snapshot.tsb,
         acwr=snapshot.acwr,
         vdot=snapshot.vdot,
-        max_hr=profile.max_hr if profile else None,
+        max_hr=max_hr,
     )
     result["workout_rx"] = asdict(rx)
 
@@ -60,6 +61,10 @@ def get_longevity():
         profile = session.query(UserProfile).first()
         snapshot = get_current_metrics(session, profile)
 
+        # Extract profile values before session closes
+        profile_age = profile.age if profile else None
+        profile_sex = profile.sex if profile else None
+
         # RHR and HRV trends (last 90 days)
         recovery_rows = (
             session.query(Recovery)
@@ -76,26 +81,27 @@ def get_longevity():
             for r in recovery_rows if r.hrv is not None
         ]
 
+        # Extract latest RHR/HRV while session is open
+        latest_rhr = None
+        latest_hrv = None
+        for r in reversed(recovery_rows):
+            if latest_rhr is None and r.resting_hr is not None:
+                latest_rhr = float(r.resting_hr)
+            if latest_hrv is None and r.hrv is not None:
+                latest_hrv = float(r.hrv)
+            if latest_rhr is not None and latest_hrv is not None:
+                break
+
     vo2max = snapshot.estimated_vo2max
     category = categorize_vo2max(vo2max)
 
     # Biological age computation
     bio_age_data = None
-    if vo2max and profile and profile.age and profile.sex:
-        latest_rhr = None
-        latest_hrv = None
-        if recovery_rows:
-            for r in reversed(recovery_rows):
-                if latest_rhr is None and r.resting_hr is not None:
-                    latest_rhr = float(r.resting_hr)
-                if latest_hrv is None and r.hrv is not None:
-                    latest_hrv = float(r.hrv)
-                if latest_rhr is not None and latest_hrv is not None:
-                    break
+    if vo2max and profile_age and profile_sex:
         result_ba = compute_biological_age(
             vo2max=vo2max,
-            sex=profile.sex,
-            age=profile.age,
+            sex=profile_sex,
+            age=profile_age,
             rhr=latest_rhr,
             hrv=latest_hrv,
         )
