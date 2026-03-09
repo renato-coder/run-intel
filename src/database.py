@@ -151,6 +151,20 @@ class WeeklyPlanModel(_SerializableMixin, Base):
     created_at = Column(DateTime, server_default=sa_func.now())
 
 
+class Workout(_SerializableMixin, Base):
+    __tablename__ = "workouts"
+    __table_args__ = (Index("ix_workouts_date", "date"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)
+    sport_name = Column(String(50), nullable=False)
+    sport_id = Column(Integer)
+    strain = Column(Float)
+    duration_min = Column(Float)
+    whoop_id = Column(String(50), unique=True)
+    created_at = Column(DateTime, server_default=sa_func.now())
+
+
 class BodyComp(_SerializableMixin, Base):
     __tablename__ = "body_comp"
     __table_args__ = (Index("ix_body_comp_date", "date"),)
@@ -197,6 +211,16 @@ def _run_migrations(eng):
             week_start DATE NOT NULL UNIQUE,
             plan_json TEXT NOT NULL,
             metrics_snapshot TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS workouts (
+            id SERIAL PRIMARY KEY,
+            date DATE NOT NULL,
+            sport_name VARCHAR(50) NOT NULL,
+            sport_id INTEGER,
+            strain FLOAT,
+            duration_min FLOAT,
+            whoop_id VARCHAR(50) UNIQUE,
             created_at TIMESTAMP DEFAULT NOW()
         )""",
     ]

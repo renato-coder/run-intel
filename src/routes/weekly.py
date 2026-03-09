@@ -8,12 +8,13 @@ from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request
 
 from database import (
-    BodyComp, NutritionLog, Recovery, Run, UserProfile, WeeklyPlanModel,
+    BodyComp, NutritionLog, Recovery, Run, UserProfile, WeeklyPlanModel, Workout,
     get_session,
 )
 from services.coaching import compute_weekly_scorecard, vdot_to_marathon_time
 from services.metrics_service import get_current_metrics
 from services.weekly_planner import generate_weekly_plan
+from whoop import WhoopClient
 
 bp = Blueprint("weekly", __name__)
 logger = logging.getLogger(__name__)
@@ -239,3 +240,98 @@ def regenerate_plan():
 
     # Redirect to the GET endpoint which will generate a fresh plan
     return weekly_plan()
+
+
+@bp.route("/api/workouts")
+def get_workouts():
+    """Return workouts for the current week, syncing from Whoop first."""
+    local_date_str = request.args.get("local_date")
+    if local_date_str:
+        try:
+            today = date.fromisoformat(local_date_str)
+        except ValueError:
+            today = datetime.now(timezone.utc).date()
+    else:
+        today = datetime.now(timezone.utc).date()
+
+    monday = _get_monday(today)
+    sunday = monday + timedelta(days=6)
+
+    # Sync from Whoop (best-effort)
+    try:
+        _sync_whoop_workouts(monday, sunday)
+    except Exception:
+        logger.exception("Error syncing Whoop workouts")
+
+    with get_session() as session:
+        rows = (
+            session.query(Workout)
+            .filter(Workout.date >= monday, Workout.date <= sunday)
+            .order_by(Workout.date)
+            .all()
+        )
+        result = [w.to_dict() for w in rows]
+
+    return jsonify(result)
+
+
+def _sync_whoop_workouts(monday: date, sunday: date):
+    """Pull workouts from Whoop for the given week and upsert into DB."""
+    client = WhoopClient()
+    if not client.access_token:
+        return
+
+    start_iso = datetime.combine(monday, datetime.min.time(), tzinfo=timezone.utc).isoformat()
+    end_iso = datetime.combine(sunday + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).isoformat()
+
+    whoop_workouts = client.get_workouts(start=start_iso, end=end_iso)
+
+    with get_session() as session:
+        for w in whoop_workouts:
+            whoop_id = str(w.get("id", ""))
+            if not whoop_id:
+                continue
+
+            # Skip if already stored
+            existing = session.query(Workout).filter(Workout.whoop_id == whoop_id).first()
+            if existing:
+                continue
+
+            sport_name = w.get("sport_name", "unknown").lower()
+            sport_id = w.get("sport_id")
+            score = w.get("score", {})
+            strain = score.get("strain")
+
+            # Compute duration from start/end
+            duration_min = None
+            start_str = w.get("start")
+            end_str = w.get("end")
+            if start_str and end_str:
+                try:
+                    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                    duration_min = round((end_dt - start_dt).total_seconds() / 60, 1)
+                except (ValueError, TypeError):
+                    pass
+
+            # Date from end time (workout date = when it ended, local-ish)
+            workout_date = None
+            if end_str:
+                try:
+                    end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                    # Shift to MST (UTC-7) for local date
+                    local_dt = end_dt - timedelta(hours=7)
+                    workout_date = local_dt.date()
+                except (ValueError, TypeError):
+                    pass
+            if not workout_date:
+                continue
+
+            session.add(Workout(
+                date=workout_date,
+                sport_name=sport_name,
+                sport_id=sport_id,
+                strain=strain,
+                duration_min=duration_min,
+                whoop_id=whoop_id,
+            ))

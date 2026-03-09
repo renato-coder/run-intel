@@ -635,10 +635,12 @@
       );
     }
 
-    function WeekOverviewStrip({ plan, runs }) {
+    function WeekOverviewStrip({ plan, runs, workouts }) {
       if (!plan || !plan.days) return null;
       const todayStr = getLocalDateString();
       const runDates = new Set((runs || []).map(r => r.date));
+      // Build a set of dates that have a non-running workout (lift, etc.)
+      const liftDates = new Set((workouts || []).filter(w => w.sport_name !== 'running').map(w => w.date));
 
       return (
         <div className="card" style={{ padding: '16px 20px' }}>
@@ -651,8 +653,14 @@
               const isToday = d.date === todayStr;
               const isPast = d.date < todayStr;
               const hasRun = runDates.has(d.date);
-              const icon = isPast ? (hasRun ? '\u2713' : '\u2013') : isToday ? '\u25B6' : '\u25CB';
-              const color = isPast ? (hasRun ? '#00F19F' : '#666') : isToday ? '#FFD600' : '#444';
+              const hasLift = liftDates.has(d.date);
+              const isLiftDay = d.type === 'lift_easy';
+              // Complete = all planned activities done
+              const complete = isLiftDay ? (hasRun && hasLift) : hasRun;
+              // Partial = at least one activity done on a lift+run day
+              const partial = isLiftDay && (hasRun || hasLift) && !complete;
+              const icon = isPast ? (complete ? '\u2713' : partial ? '\u00BD' : '\u2013') : isToday ? '\u25B6' : '\u25CB';
+              const color = isPast ? (complete ? '#00F19F' : partial ? '#FFD600' : '#666') : isToday ? '#FFD600' : '#444';
               return (
                 <div key={i} style={{ padding: '6px 0' }}>
                   <div style={{ fontSize: 11, color: color, fontWeight: isToday ? 700 : 400 }}>{d.day_label.slice(0, 3)}</div>
@@ -1800,6 +1808,7 @@
       const [profile, setProfile] = useState(null);
       const [weeklyScorecard, setWeeklyScorecard] = useState(null);
       const [weeklyPlan, setWeeklyPlan] = useState(null);
+      const [whWorkouts, setWhWorkouts] = useState([]);
 
       const loadAll = useCallback(() => {
         const ld = getLocalDateString();
@@ -1813,6 +1822,7 @@
           api('/api/profile').then(setProfile),
           api(`/api/weekly-scorecard?local_date=${ld}`).then(r => { if (!r.error) setWeeklyScorecard(r); }).catch(() => {}),
           api(`/api/weekly-plan?local_date=${ld}`).then(r => { if (!r.error) setWeeklyPlan(r); }).catch(() => {}),
+          api(`/api/workouts?local_date=${ld}`).then(r => { if (Array.isArray(r)) setWhWorkouts(r); }).catch(() => {}),
         ]).catch(() => {});
       }, []);
 
@@ -1833,7 +1843,7 @@
             <>
               <WeeklyScorecardCard scorecard={weeklyScorecard} />
               <TodayWorkoutCard plan={weeklyPlan} recovery={recovery} />
-              <WeekOverviewStrip plan={weeklyPlan} runs={runs} />
+              <WeekOverviewStrip plan={weeklyPlan} runs={runs} workouts={whWorkouts} />
               <MorningBriefing briefing={briefing} />
               <LogRunCard onLogged={loadAll} />
               <div className="two-col">
