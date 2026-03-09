@@ -20,7 +20,6 @@ def _fetch_and_cache_recovery(session):
     """
     import logging
 
-    from utils import today_utc_start
     from whoop import WhoopClient
 
     logger = logging.getLogger(__name__)
@@ -29,24 +28,43 @@ def _fetch_and_cache_recovery(session):
 
     try:
         client = WhoopClient()
-        recs = client.get_recovery(start=today_utc_start())
+        # Query from yesterday — Whoop recovery is tied to a sleep cycle that
+        # starts the previous day, so today's recovery may have a cycle_start
+        # before midnight UTC today.
+        yesterday_start = (
+            datetime.now(timezone.utc)
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            - timedelta(days=1)
+        ).isoformat()
+        recs = client.get_recovery(start=yesterday_start)
         if recs:
-            score = recs[-1].get("score", {})
+            # Take the most recent record and cache it
+            latest_rec = recs[-1]
+            score = latest_rec.get("score", {})
             recovery = {
                 "recovery_score": score.get("recovery_score"),
                 "hrv": score.get("hrv_rmssd_milli"),
                 "resting_hr": score.get("resting_heart_rate"),
             }
+            # Determine the record's actual date from the cycle's created_at
+            rec_date = today
+            created = latest_rec.get("created_at") or latest_rec.get("updated_at")
+            if created:
+                try:
+                    rec_date = datetime.fromisoformat(created.replace("Z", "+00:00")).date()
+                except (ValueError, AttributeError):
+                    pass
+
             if recovery["recovery_score"] is not None:
-                existing = session.query(Recovery).filter(Recovery.date == today).first()
+                existing = session.query(Recovery).filter(Recovery.date == rec_date).first()
                 if existing:
                     existing.recovery_score = recovery["recovery_score"]
                     existing.hrv = recovery["hrv"]
                     existing.resting_hr = recovery["resting_hr"]
                 else:
-                    session.add(Recovery(date=today, **recovery))
+                    session.add(Recovery(date=rec_date, **recovery))
                 session.flush()
-                return recovery, today.isoformat()
+                return recovery, rec_date.isoformat()
     except Exception:
         logger.exception("Error fetching recovery from Whoop")
 

@@ -182,6 +182,14 @@ def _run_migrations(eng):
     data_fixes = [
         # Fix run logged 2026-03-08 local time, stored as 03-09 due to UTC bug
         "UPDATE runs SET date = '2026-03-08' WHERE date = '2026-03-09' AND distance_miles = 12.0 AND time_minutes = 140.0",
+        # Fix time (was 140, should be 100) and recalculate pace; clear Whoop fields for re-match
+        """UPDATE runs SET time_minutes = 100.0, pace_per_mile = '8:20',
+           avg_hr = NULL, max_hr = NULL, strain = NULL,
+           whoop_distance_meters = NULL,
+           zone_zero_milli = NULL, zone_one_milli = NULL,
+           zone_two_milli = NULL, zone_three_milli = NULL,
+           zone_four_milli = NULL, zone_five_milli = NULL
+           WHERE date = '2026-03-08' AND distance_miles = 12.0 AND time_minutes = 140.0""",
     ]
     with eng.begin() as conn:
         for sql in columns:
