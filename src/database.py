@@ -194,6 +194,8 @@ def _run_migrations(eng):
            zone_two_milli = NULL, zone_three_milli = NULL,
            zone_four_milli = NULL, zone_five_milli = NULL
            WHERE date = '2026-03-08' AND distance_miles = 12.0 AND time_minutes = 140.0""",
+        # Fix nutrition entries logged 2026-03-08 MST but stored as 03-09 (UTC date)
+        "UPDATE nutrition_log SET date = '2026-03-08' WHERE date = '2026-03-09' AND created_at < '2026-03-09T07:00:00'",
     ]
     with eng.begin() as conn:
         for sql in columns:
