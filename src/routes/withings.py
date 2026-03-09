@@ -49,6 +49,28 @@ def withings_status():
         return jsonify({"connected": False, "configured": True})
 
 
+@bp.route("/api/withings/debug")
+def withings_debug():
+    """Debug endpoint — check tokens and try a test sync."""
+    from datetime import date, timedelta
+    info = {"tokens": False, "measurements": [], "error": None}
+    try:
+        from withings import WithingsClient
+        client = WithingsClient()
+        info["tokens"] = client.has_tokens()
+        if client.has_tokens():
+            today = date.today()
+            start = today - timedelta(days=30)
+            measurements = client.get_weight_measurements(start, today)
+            info["measurements"] = [
+                {"date": str(m["date"]), "weight_kg": m["weight_kg"], "body_fat_pct": m.get("body_fat_pct")}
+                for m in measurements
+            ]
+    except Exception as e:
+        info["error"] = str(e)
+    return jsonify(info)
+
+
 @bp.route("/api/withings/auth")
 def withings_auth():
     """Redirect to Withings authorization page."""
