@@ -1,11 +1,14 @@
 """Briefing routes — GET /api/briefing, GET /api/recovery/today, GET /api/snapshot."""
 
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify
 
 from briefing import generate_briefing
-from database import Recovery, Run, get_session
+from database import BodyComp, NutritionLog, Recovery, Run, UserProfile, get_session
+from services.coaching import prescribe_workout
+from services.metrics_service import get_current_metrics
 
 bp = Blueprint("briefing", __name__)
 
@@ -73,9 +76,15 @@ def _fetch_and_cache_recovery(session):
 
 @bp.route("/api/briefing", methods=["GET"])
 def get_briefing():
-    """Return the morning briefing based on recovery, HRV, and strain data."""
+    """Return the enhanced morning briefing with structured JSON.
+
+    Includes: recovery status, workout prescription, pace progress,
+    nutrition targets, body comp, and longevity metrics.
+    Each section is null if no data is available (graceful degradation).
+    """
     today = datetime.now(timezone.utc).date()
     cutoff_30d = today - timedelta(days=30)
+    yesterday = today - timedelta(days=1)
 
     with get_session() as session:
         today_recovery, recovery_date = _fetch_and_cache_recovery(session)
@@ -100,12 +109,119 @@ def get_briefing():
         )
         run_history = [{"date": r.date.isoformat(), "strain": r.strain} for r in run_rows]
 
+        # Get profile and metrics for enhanced briefing
+        profile = session.query(UserProfile).first()
+        metrics = get_current_metrics(session, profile)
+
+        # Yesterday's nutrition
+        yesterday_nutrition = (
+            session.query(NutritionLog)
+            .filter(NutritionLog.date == yesterday)
+            .all()
+        )
+        yesterday_cals = sum(n.calories for n in yesterday_nutrition) if yesterday_nutrition else None
+        yesterday_protein = sum(n.protein_grams for n in yesterday_nutrition) if yesterday_nutrition else None
+
+        # Latest body comp
+        latest_bc = (
+            session.query(BodyComp)
+            .order_by(BodyComp.date.desc())
+            .first()
+        )
+
+        # Weight trend (7-day)
+        week_ago_bc = (
+            session.query(BodyComp)
+            .filter(BodyComp.date <= today - timedelta(days=6))
+            .order_by(BodyComp.date.desc())
+            .first()
+        )
+
+    # Generate base briefing (existing logic)
     result = generate_briefing(today_recovery, recovery_history, run_history)
     if result is None:
         return jsonify({"status": "unavailable", "status_label": "No recovery data available yet."})
+
     result["recovery_date"] = recovery_date
     if note:
         result["note"] = note
+
+    # Add structured workout prescription
+    recovery_score = today_recovery.get("recovery_score")
+    rx = prescribe_workout(
+        recovery_score=recovery_score,
+        tsb=metrics.tsb,
+        acwr=metrics.acwr,
+        vdot=metrics.vdot,
+        max_hr=profile.max_hr if profile else None,
+    )
+    result["workout"] = asdict(rx)
+
+    # Add pace progress
+    result["pace_progress"] = None
+    if metrics.vdot or metrics.ef_30d:
+        progress = {}
+        if metrics.vdot:
+            progress["vdot_current"] = metrics.vdot
+        if profile and profile.goal_marathon_time_min:
+            from services.coaching import estimate_vdot
+            target_vdot = estimate_vdot(26.2, float(profile.goal_marathon_time_min))
+            progress["vdot_target"] = target_vdot
+        if metrics.ef_trend:
+            progress["ef_trend"] = metrics.ef_trend
+        if metrics.ef_30d and metrics.ef_90d and metrics.ef_90d > 0:
+            progress["ef_change_30d_pct"] = round((metrics.ef_30d - metrics.ef_90d) / metrics.ef_90d * 100, 1)
+        result["pace_progress"] = progress
+
+    # Add nutrition target
+    result["nutrition_target"] = None
+    if profile and profile.weight_lbs:
+        # Simple static target for v1
+        weight = float(profile.weight_lbs)
+        target_cals = int(weight * 13)  # ~13 cal/lb for moderate deficit with activity
+        target_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
+        result["nutrition_target"] = {
+            "calories": target_cals,
+            "protein_grams": target_protein,
+            "day_type": rx.type if rx.type != "rest" else "rest",
+            "yesterday": {
+                "calories": yesterday_cals,
+                "protein_grams": yesterday_protein,
+            } if yesterday_cals is not None else None,
+        }
+
+    # Add body comp
+    result["body_comp"] = None
+    if latest_bc:
+        bc = {
+            "weight_lbs": float(latest_bc.weight_lbs),
+            "body_fat_pct": float(latest_bc.body_fat_pct) if latest_bc.body_fat_pct else None,
+        }
+        if week_ago_bc:
+            weekly_change = float(latest_bc.weight_lbs) - float(week_ago_bc.weight_lbs)
+            bc["weight_trend_per_week"] = round(weekly_change, 1)
+        if latest_bc.body_fat_pct and profile and profile.goal_body_fat_pct:
+            current_bf = float(latest_bc.body_fat_pct)
+            target_bf = float(profile.goal_body_fat_pct)
+            if current_bf > target_bf:
+                # Rough estimate: ~0.5% BF/week at moderate deficit
+                weeks = round((current_bf - target_bf) / 0.5)
+                bc["target_body_fat_pct"] = target_bf
+                bc["weeks_to_goal"] = weeks
+        result["body_comp"] = bc
+
+    # Add longevity
+    result["longevity"] = None
+    if metrics.estimated_vo2max:
+        vo2 = metrics.estimated_vo2max
+        category = "Elite" if vo2 >= 50 else "Above Average" if vo2 >= 45 else "Average" if vo2 >= 40 else "Below Average" if vo2 >= 35 else "Low"
+        result["longevity"] = {
+            "vo2max_estimate": vo2,
+            "vo2max_category": category,
+            "zone2_minutes_week": metrics.zone2_minutes_week,
+            "zone2_target": 150,
+        }
+
     return jsonify(result)
 
 
