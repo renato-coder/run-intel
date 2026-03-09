@@ -1539,7 +1539,7 @@
       const [form, setForm] = useState({
         age: '', sex: '', height_inches: '', weight_lbs: '', max_hr: '', body_fat_pct: '',
         goal_marathon_time_min: '', goal_body_fat_pct: '', goal_weight_lbs: '', goal_target_date: '',
-        goal_calorie_target: '', goal_protein_target_grams: '',
+        goal_calorie_target: '', goal_protein_target_grams: '', rmr_override: '',
       });
       const [saving, setSaving] = useState(false);
       const [saved, setSaved] = useState(false);
@@ -1559,6 +1559,7 @@
             goal_target_date: profile.goal_target_date || '',
             goal_calorie_target: profile.goal_calorie_target || '',
             goal_protein_target_grams: profile.goal_protein_target_grams || '',
+            rmr_override: profile.rmr_override || '',
           });
         }
       }, [profile]);
@@ -1601,7 +1602,8 @@
         const hCm = heightIn * 2.54;
         estimatedRmr = Math.round((10 * wKg) + (6.25 * hCm) - (5 * ageVal) + (sexVal === 'male' ? 5 : -161));
       }
-      const autoCalories = estimatedRmr ? Math.round(estimatedRmr * 0.9 * 1.55) : (weight ? Math.round(weight * 13) : null);
+      const rmrUsed = parseInt(form.rmr_override) || estimatedRmr;
+      const autoCalories = rmrUsed ? Math.round(rmrUsed * 0.9 * 1.55) : (weight ? Math.round(weight * 13) : null);
       const autoProtein = weight ? Math.max(Math.round(weight * 1.0), 150) : null;
 
       return (
@@ -1635,12 +1637,14 @@
 
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Nutrition Targets</h3>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-            {estimatedRmr
-              ? `Based on Mifflin-St Jeor: RMR ~${estimatedRmr.toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. `
-              : (autoCalories ? `Estimated: ~${autoCalories.toLocaleString()} cal/day. ` : '')}
-            Leave blank to use auto-calculated targets. Custom values override.
+            {form.rmr_override
+              ? `Using your RMR: ${parseInt(form.rmr_override).toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. `
+              : (estimatedRmr
+                ? `Mifflin-St Jeor estimate: RMR ~${estimatedRmr.toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. Set your measured RMR below to override. `
+                : (autoCalories ? `Estimated: ~${autoCalories.toLocaleString()} cal/day. ` : ''))}
           </div>
-          <div className="form-grid-2" style={{ marginBottom: 20 }}>
+          <div className="form-grid-3" style={{ marginBottom: 20 }}>
+            <div className="field"><label>RMR (cal/day)</label><input type="number" placeholder={estimatedRmr ? `Auto: ${estimatedRmr}` : '1800'} {...f('rmr_override')} /></div>
             <div className="field"><label>Daily Calorie Target</label><input type="number" placeholder={autoCalories ? `Auto: ${autoCalories}` : '2500'} {...f('goal_calorie_target')} /></div>
             <div className="field"><label>Daily Protein Target (g)</label><input type="number" placeholder={autoProtein ? `Auto: ${autoProtein}` : '180'} {...f('goal_protein_target_grams')} /></div>
           </div>

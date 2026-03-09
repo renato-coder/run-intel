@@ -365,13 +365,15 @@ def compute_nutrition_plan(
     goal_weight_lbs: float | None = None,
     goal_target_date: date | None = None,
     activity_multiplier: float = 1.55,
+    rmr_override: int | None = None,
 ) -> NutritionPlan:
     """Full nutrition target calculation for a weight-loss phase.
 
-    Mifflin-St Jeor RMR → 10% metabolic adaptation → TDEE → deficit.
+    Uses rmr_override if provided, otherwise Mifflin-St Jeor.
+    RMR → 10% metabolic adaptation → TDEE → deficit.
     Deficit derived from weight gap and timeline, capped for athlete safety.
     """
-    rmr = compute_rmr(weight_lbs, height_inches, age, sex)
+    rmr = rmr_override if rmr_override else compute_rmr(weight_lbs, height_inches, age, sex)
     rmr_adapted = round(rmr * 0.90)
     tdee = round(rmr_adapted * activity_multiplier)
 

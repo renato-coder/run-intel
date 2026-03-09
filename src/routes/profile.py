@@ -31,7 +31,7 @@ def update_profile():
         "age", "height_inches", "weight_lbs", "max_hr", "body_fat_pct",
         "goal_marathon_time_min", "goal_body_fat_pct", "goal_weight_lbs",
         "goal_target_date", "goal_calorie_target", "goal_protein_target_grams",
-        "sex",
+        "sex", "rmr_override",
     }
     updates = {k: v for k, v in data.items() if k in allowed}
 
@@ -49,7 +49,7 @@ def update_profile():
         updates["sex"] = None
 
     # Coerce numeric fields
-    int_fields = {"age", "height_inches", "max_hr", "goal_calorie_target", "goal_protein_target_grams"}
+    int_fields = {"age", "height_inches", "max_hr", "goal_calorie_target", "goal_protein_target_grams", "rmr_override"}
     numeric_fields = {"weight_lbs", "body_fat_pct", "goal_marathon_time_min", "goal_body_fat_pct", "goal_weight_lbs"}
     for k in list(updates.keys()):
         if updates[k] is None or updates[k] == "":

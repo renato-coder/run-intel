@@ -104,6 +104,7 @@ class UserProfile(Base):
     goal_calorie_target = Column(Integer, CheckConstraint("goal_calorie_target >= 800 AND goal_calorie_target <= 10000"))
     goal_protein_target_grams = Column(Integer, CheckConstraint("goal_protein_target_grams >= 20 AND goal_protein_target_grams <= 500"))
     sex = Column(String(10), CheckConstraint("sex IN ('male', 'female')"))
+    rmr_override = Column(Integer, CheckConstraint("rmr_override >= 800 AND rmr_override <= 5000"))
     created_at = Column(DateTime, server_default=sa_func.now())
     updated_at = Column(DateTime, server_default=sa_func.now(), onupdate=sa_func.now())
 
@@ -122,6 +123,7 @@ class UserProfile(Base):
             "goal_calorie_target": self.goal_calorie_target,
             "goal_protein_target_grams": self.goal_protein_target_grams,
             "sex": self.sex,
+            "rmr_override": self.rmr_override,
         }
 
 
@@ -173,11 +175,13 @@ def _run_migrations(eng):
         "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS goal_protein_target_grams INTEGER",
         "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sex VARCHAR(10)",
         "ALTER TABLE body_comp ADD COLUMN IF NOT EXISTS photo BYTEA",
+        "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS rmr_override INTEGER",
     ]
     constraints = [
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_cal_target CHECK (goal_calorie_target >= 800 AND goal_calorie_target <= 10000)",
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_protein_target CHECK (goal_protein_target_grams >= 20 AND goal_protein_target_grams <= 500)",
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_sex CHECK (sex IN ('male', 'female'))",
+        "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_rmr_override CHECK (rmr_override >= 800 AND rmr_override <= 5000)",
     ]
     data_fixes = [
         # Fix run logged 2026-03-08 local time, stored as 03-09 due to UTC bug

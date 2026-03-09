@@ -244,6 +244,7 @@ def get_briefing():
                 sex=sex,
                 goal_weight_lbs=float(profile_data["goal_weight_lbs"]) if profile_data.get("goal_weight_lbs") else None,
                 goal_target_date=goal_date,
+                rmr_override=profile_data.get("rmr_override"),
             )
 
             # Training-day adjustment: hard days get smaller deficit, rest days get larger
