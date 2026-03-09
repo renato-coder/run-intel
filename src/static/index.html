@@ -85,6 +85,33 @@
       box-shadow: 0 0 6px #00F19F80;
     }
 
+    /* ── Nav Tabs ────────────────────────────────────────────────── */
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      background: #141414;
+      border: 1px solid #1E1E1E;
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+    .nav-tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .nav-tab:hover { color: #E0E0E0; background: #1A1A1A; }
+    .nav-tab.active { color: #0A0A0A; background: #00F19F; font-weight: 600; }
+
     /* ── Form ───────────────────────────────────────────────────── */
     .form-row {
       display: grid;
@@ -92,8 +119,19 @@
       gap: 12px;
       align-items: end;
     }
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
     @media (max-width: 600px) {
       .form-row { grid-template-columns: 1fr 1fr; }
+      .form-grid-3 { grid-template-columns: 1fr 1fr; }
     }
     .field label {
       display: block;
@@ -134,6 +172,14 @@
     }
     .btn:hover { opacity: 0.85; box-shadow: 0 0 16px #00F19F40; }
     .btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+    .btn-sm { padding: 6px 16px; font-size: 12px; }
+    .btn-outline {
+      background: transparent;
+      color: #00F19F;
+      border: 1px solid #00F19F40;
+    }
+    .btn-outline:hover { background: #00F19F15; }
+    .btn-danger { background: #FF4D4D; }
 
     /* ── Briefing ───────────────────────────────────────────────── */
     .briefing-card {
@@ -221,6 +267,36 @@
       text-transform: uppercase;
       color: #00F19F;
       margin-bottom: 8px;
+    }
+
+    /* ── Progress Bar ──────────────────────────────────────────── */
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #1E1E1E;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+
+    /* ── Metric Row ──────────────────────────────────────────────── */
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #1E1E1E;
+    }
+    .metric-row:last-child { border-bottom: none; }
+    .metric-label { font-size: 13px; color: #888; }
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 500;
     }
 
     /* ── Shoe Tracker ───────────────────────────────────────────── */
@@ -332,6 +408,43 @@
     /* ── Chart ───────────────────────────────────────────────────── */
     .chart-wrap { position: relative; height: 280px; margin-top: 8px; }
 
+    /* ── VO2 Max Ring ──────────────────────────────────────────── */
+    .vo2-ring {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      margin: 0 auto 16px;
+    }
+    .vo2-ring .big-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .vo2-ring .label {
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    /* ── Profile Banner ─────────────────────────────────────────── */
+    .profile-banner {
+      background: linear-gradient(135deg, #1A1A0A 0%, #1A2A1A 100%);
+      border: 1px solid #2A2A1A;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .profile-banner .msg { font-size: 14px; color: #C8D8B9; }
+
     /* ── Loading ─────────────────────────────────────────────────── */
     .spinner {
       display: inline-block;
@@ -363,7 +476,10 @@
     const api = (path, opts) => fetch(path, {
       ...opts,
       headers: { ...(opts?.headers || {}), 'X-Requested-With': 'RunIntel' },
-    }).then(r => r.json());
+    }).then(r => {
+      if (!r.ok) throw new Error(`API ${r.status}`);
+      return r.json();
+    });
 
     function secToPace(s) {
       if (!s || s <= 0) return 'N/A';
@@ -391,23 +507,46 @@
       return 'Fresh';
     }
 
+    function vo2Category(v) {
+      if (v >= 50) return { label: 'Elite', color: '#00F19F' };
+      if (v >= 45) return { label: 'Above Average', color: '#00F19F' };
+      if (v >= 40) return { label: 'Average', color: '#FFD600' };
+      if (v >= 35) return { label: 'Below Average', color: '#FF8C00' };
+      return { label: 'Low', color: '#FF4D4D' };
+    }
+
     // ── Components ───────────────────────────────────────────────
 
-    function Header() {
+    function Header({ tab, setTab }) {
+      const tabs = [
+        { id: 'dashboard', label: 'Dashboard' },
+        { id: 'nutrition', label: 'Nutrition' },
+        { id: 'body', label: 'Body Comp' },
+        { id: 'longevity', label: 'Longevity' },
+        { id: 'settings', label: 'Settings' },
+      ];
       return (
-        <div className="header">
-          <div className="header-left">
-            <span className="bolt green">&#9889;</span>
-            <div>
-              <h1>Run Intel</h1>
-              <div className="subtitle">Powered by Whoop</div>
+        <>
+          <div className="header">
+            <div className="header-left">
+              <span className="bolt green">&#9889;</span>
+              <div>
+                <h1>Run Intel</h1>
+                <div className="subtitle">Personal Performance Optimizer</div>
+              </div>
+            </div>
+            <div className="status">
+              <div className="status-dot"></div>
+              Connected
             </div>
           </div>
-          <div className="status">
-            <div className="status-dot"></div>
-            Connected
+          <div className="nav-tabs">
+            {tabs.map(t => (
+              <button key={t.id} className={'nav-tab' + (tab === t.id ? ' active' : '')}
+                onClick={() => setTab(t.id)}>{t.label}</button>
+            ))}
           </div>
-        </div>
+        </>
       );
     }
 
@@ -421,6 +560,7 @@
     function MorningBriefing({ briefing }) {
       if (!briefing || briefing.status === 'unavailable') return null;
       const m = briefing.metrics || {};
+      const w = briefing.workout;
       const recDate = formatRecoveryDate(briefing.recovery_date);
       return (
         <div className="briefing-card" style={{ '--briefing-color': briefing.color }}>
@@ -433,9 +573,25 @@
               <div style={{ fontSize: 12, color: '#FF8C00', marginBottom: 12 }}>{briefing.note}</div>
             )}
             <div className="briefing-play">
-              <div className="briefing-play-label">Today's Play</div>
-              <div className="briefing-play-text">{briefing.play}</div>
+              <div className="briefing-play-label">Today's Workout</div>
+              <div className="briefing-play-text">
+                {w ? w.description : briefing.play}
+              </div>
+              {w && w.rationale && (
+                <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>{w.rationale}</div>
+              )}
             </div>
+            {briefing.pace_progress && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Pace Progress</div>
+                <div style={{ fontSize: 13, color: '#CCC' }}>
+                  {briefing.pace_progress.vdot_current && `VDOT: ${briefing.pace_progress.vdot_current}`}
+                  {briefing.pace_progress.vdot_target && ` → Target: ${briefing.pace_progress.vdot_target}`}
+                  {briefing.pace_progress.ef_trend && ` | EF: ${briefing.pace_progress.ef_trend}`}
+                  {briefing.pace_progress.ef_change_30d_pct != null && ` (${briefing.pace_progress.ef_change_30d_pct > 0 ? '+' : ''}${briefing.pace_progress.ef_change_30d_pct}%)`}
+                </div>
+              </div>
+            )}
             <div className="briefing-metrics">
               {m.recovery_score != null && <span className="briefing-metric">Recovery {m.recovery_score}%{recDate ? ` (${recDate})` : ''}</span>}
               {m.hrv_today != null && <span className="briefing-metric">HRV {m.hrv_today}</span>}
@@ -462,22 +618,17 @@
           const res = await api('/api/runs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              distance_miles: parseFloat(dist),
-              time_minutes: parseFloat(time),
-              shoe,
-            }),
+            body: JSON.stringify({ distance_miles: parseFloat(dist), time_minutes: parseFloat(time), shoe }),
           });
           if (res.error) {
             setInsight('Error: ' + res.error);
           } else {
             setInsight(res.coaching_insight);
-            setDist('');
-            setTime('');
+            setDist(''); setTime('');
             if (onLogged) onLogged();
           }
         } catch (e) {
-          setInsight('Error logging run. Check console.');
+          setInsight('Error logging run.');
           console.error(e);
         }
         setLoading(false);
@@ -485,26 +636,20 @@
 
       return (
         <div className="card">
-          <div className="card-header">
-            <h2 className="green">LOG A RUN</h2>
-          </div>
+          <div className="card-header"><h2 className="green">LOG A RUN</h2></div>
           <div className="form-row">
             <div className="field">
               <label>Distance (mi)</label>
-              <input type="number" step="0.1" placeholder="6.2"
-                value={dist} onChange={e => setDist(e.target.value)} />
+              <input type="number" step="0.1" placeholder="6.2" value={dist} onChange={e => setDist(e.target.value)} />
             </div>
             <div className="field">
               <label>Time (min)</label>
-              <input type="number" step="0.1" placeholder="48.5"
-                value={time} onChange={e => setTime(e.target.value)} />
+              <input type="number" step="0.1" placeholder="48.5" value={time} onChange={e => setTime(e.target.value)} />
             </div>
             <div className="field">
               <label>Shoe</label>
               <select value={shoe} onChange={e => setShoe(e.target.value)}>
-                {SHOE_KEYS.map(k => (
-                  <option key={k} value={k}>{SHOE_DISPLAY[k]}</option>
-                ))}
+                {SHOE_KEYS.map(k => <option key={k} value={k}>{SHOE_DISPLAY[k]}</option>)}
               </select>
             </div>
             <button className="btn" onClick={submit} disabled={loading || !dist || !time}>
@@ -524,20 +669,14 @@
     function ShoeTracker({ shoes }) {
       const mileMap = {};
       SHOE_KEYS.forEach(k => { mileMap[k] = 0; });
-      if (shoes) {
-        shoes.forEach(s => { if (mileMap.hasOwnProperty(s.name)) mileMap[s.name] = s.miles; });
-      }
-
+      if (shoes) shoes.forEach(s => { if (mileMap.hasOwnProperty(s.name)) mileMap[s.name] = s.miles; });
       return (
         <div className="card">
-          <div className="card-header">
-            <h2>SHOE TRACKER</h2>
-          </div>
+          <div className="card-header"><h2>SHOE TRACKER</h2></div>
           {SHOE_KEYS.map(k => {
             const miles = mileMap[k];
             const pct = Math.min((miles / SHOE_MAX) * 100, 100);
             const color = shoeColor(miles);
-            const status = shoeStatus(miles);
             return (
               <div className="shoe-item" key={k}>
                 <div className="shoe-top">
@@ -547,9 +686,7 @@
                 <div className="shoe-track">
                   <div className="shoe-fill" style={{ width: pct + '%', background: color }}></div>
                 </div>
-                <div className="shoe-label" style={{ color: color === '#FF4D4D' ? '#FF4D4D' : '#555' }}>
-                  {status}
-                </div>
+                <div className="shoe-label" style={{ color: color === '#FF4D4D' ? '#FF4D4D' : '#555' }}>{shoeStatus(miles)}</div>
               </div>
             );
           })}
@@ -560,7 +697,6 @@
     function SnapshotCard({ snapshot, recovery }) {
       const s7 = snapshot?.last_7d || {};
       const s30 = snapshot?.last_30d || {};
-
       const rows = [
         { label: 'Avg HR', key: 'avg_hr', unit: ' bpm', lower: true },
         { label: 'Strain', key: 'avg_strain', unit: '', lower: false },
@@ -568,18 +704,13 @@
         { label: 'HRV', key: 'hrv', unit: ' ms', lower: false },
         { label: 'Resting HR', key: 'resting_hr', unit: ' bpm', lower: true },
       ];
-
       return (
         <div className="card">
-          <div className="card-header">
-            <h2>TODAY'S SNAPSHOT</h2>
-          </div>
+          <div className="card-header"><h2>TODAY'S SNAPSHOT</h2></div>
           {recovery && recovery.recovery_score != null && (
             <div className="recovery-hero">
               <div className="dim text-sm" style={{ marginBottom: 4, letterSpacing: '1px', fontSize: 10, textTransform: 'uppercase' }}>Recovery</div>
-              <div className={'big-num ' + recoveryColor(recovery.recovery_score)}>
-                {Math.round(recovery.recovery_score)}%
-              </div>
+              <div className={'big-num ' + recoveryColor(recovery.recovery_score)}>{Math.round(recovery.recovery_score)}%</div>
               <div className="sub-stats">
                 {recovery.resting_hr != null && <span className="sub-stat">RHR {Math.round(recovery.resting_hr)}</span>}
                 {recovery.hrv != null && <span className="sub-stat">HRV {recovery.hrv.toFixed(1)}</span>}
@@ -588,33 +719,21 @@
           )}
           <div className="snap-table">
             <div className="snap-row snap-header">
-              <div className="snap-hdr"></div>
-              <div className="snap-hdr">7 Day</div>
-              <div className="snap-hdr">30 Day</div>
-              <div className="snap-hdr" style={{ textAlign: 'right' }}>Delta</div>
+              <div className="snap-hdr"></div><div className="snap-hdr">7 Day</div><div className="snap-hdr">30 Day</div><div className="snap-hdr" style={{ textAlign: 'right' }}>Delta</div>
             </div>
             {rows.map(r => {
-              const v7 = s7[r.key];
-              const v30 = s30[r.key];
+              const v7 = s7[r.key], v30 = s30[r.key];
               if (v7 == null && v30 == null) return null;
               const diff = (v7 != null && v30 != null) ? v7 - v30 : null;
               let deltaClass = 'dim';
-              if (diff != null && Math.abs(diff) >= 1) {
-                const good = r.lower ? diff < 0 : diff > 0;
-                deltaClass = good ? 'green' : 'red';
-              }
-              const fmt = (v, key) => {
-                if (v == null) return '\u2014';
-                return (key === 'hrv' ? v.toFixed(1) : Math.round(v)) + r.unit;
-              };
+              if (diff != null && Math.abs(diff) >= 1) deltaClass = (r.lower ? diff < 0 : diff > 0) ? 'green' : 'red';
+              const fmt = (v, key) => v == null ? '\u2014' : (key === 'hrv' ? v.toFixed(1) : Math.round(v)) + r.unit;
               return (
                 <div className="snap-row" key={r.key}>
                   <div className="snap-label">{r.label}</div>
                   <div className="snap-val">{fmt(v7, r.key)}</div>
                   <div className="snap-val dim">{fmt(v30, r.key)}</div>
-                  <div className={'snap-delta ' + deltaClass}>
-                    {diff != null ? (diff > 0 ? '+' : '') + (r.key === 'hrv' ? diff.toFixed(1) : Math.round(diff)) : ''}
-                  </div>
+                  <div className={'snap-delta ' + deltaClass}>{diff != null ? (diff > 0 ? '+' : '') + (r.key === 'hrv' ? diff.toFixed(1) : Math.round(diff)) : ''}</div>
                 </div>
               );
             })}
@@ -626,104 +745,41 @@
     function TrendChart({ trends }) {
       const canvasRef = useRef(null);
       const chartRef = useRef(null);
-
       useEffect(() => {
         if (!trends || trends.length === 0) return;
         if (chartRef.current) chartRef.current.destroy();
-
         const ctx = canvasRef.current.getContext('2d');
         chartRef.current = new Chart(ctx, {
           type: 'line',
           data: {
             labels: trends.map(t => t.date),
             datasets: [
-              {
-                label: 'Pace',
-                data: trends.map(t => t.pace_seconds),
-                borderColor: '#00F19F',
-                backgroundColor: '#00F19F15',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 3,
-                pointBackgroundColor: '#00F19F',
-                borderWidth: 2,
-                yAxisID: 'y',
-              },
-              {
-                label: 'Avg HR',
-                data: trends.map(t => t.avg_hr),
-                borderColor: '#FF4D4D',
-                backgroundColor: '#FF4D4D10',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 3,
-                pointBackgroundColor: '#FF4D4D',
-                borderWidth: 2,
-                yAxisID: 'y1',
-              },
+              { label: 'Pace', data: trends.map(t => t.pace_seconds), borderColor: '#00F19F', backgroundColor: '#00F19F15', fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#00F19F', borderWidth: 2, yAxisID: 'y' },
+              { label: 'Avg HR', data: trends.map(t => t.avg_hr), borderColor: '#FF4D4D', backgroundColor: '#FF4D4D10', fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#FF4D4D', borderWidth: 2, yAxisID: 'y1' },
             ],
           },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
-              legend: {
-                labels: { color: '#888', font: { family: 'Outfit', size: 12 }, usePointStyle: true, pointStyle: 'circle' },
-              },
-              tooltip: {
-                backgroundColor: '#1A1A1A',
-                titleColor: '#FFF',
-                bodyColor: '#CCC',
-                borderColor: '#2A2A2A',
-                borderWidth: 1,
-                padding: 12,
-                callbacks: {
-                  label: function(ctx) {
-                    if (ctx.datasetIndex === 0) return ' Pace: ' + secToPace(ctx.parsed.y) + '/mi';
-                    return ' HR: ' + ctx.parsed.y + ' bpm';
-                  }
-                }
-              },
+              legend: { labels: { color: '#888', font: { family: 'Outfit', size: 12 }, usePointStyle: true, pointStyle: 'circle' } },
+              tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12,
+                callbacks: { label: ctx => ctx.datasetIndex === 0 ? ' Pace: ' + secToPace(ctx.parsed.y) + '/mi' : ' HR: ' + ctx.parsed.y + ' bpm' } },
             },
             scales: {
-              x: {
-                ticks: { color: '#444', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } },
-                grid: { color: '#1A1A1A' },
-              },
-              y: {
-                position: 'left',
-                reverse: true,
-                ticks: {
-                  color: '#00F19F80',
-                  font: { family: 'JetBrains Mono', size: 11 },
-                  callback: v => secToPace(v),
-                },
-                grid: { color: '#1A1A1A' },
-                title: { display: true, text: 'Pace', color: '#00F19F', font: { family: 'Outfit', size: 12 } },
-              },
-              y1: {
-                position: 'right',
-                ticks: { color: '#FF4D4D80', font: { family: 'JetBrains Mono', size: 11 } },
-                grid: { display: false },
-                title: { display: true, text: 'HR (bpm)', color: '#FF4D4D', font: { family: 'Outfit', size: 12 } },
-              },
+              x: { ticks: { color: '#444', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1A1A1A' } },
+              y: { position: 'left', reverse: true, ticks: { color: '#00F19F80', font: { family: 'JetBrains Mono', size: 11 }, callback: v => secToPace(v) }, grid: { color: '#1A1A1A' }, title: { display: true, text: 'Pace', color: '#00F19F', font: { family: 'Outfit', size: 12 } } },
+              y1: { position: 'right', ticks: { color: '#FF4D4D80', font: { family: 'JetBrains Mono', size: 11 } }, grid: { display: false }, title: { display: true, text: 'HR (bpm)', color: '#FF4D4D', font: { family: 'Outfit', size: 12 } } },
             },
           },
         });
         return () => { if (chartRef.current) chartRef.current.destroy(); };
       }, [trends]);
-
       if (!trends || trends.length === 0) return null;
       return (
         <div className="card">
-          <div className="card-header">
-            <h2>PACE vs HEART RATE</h2>
-            <span className="text-sm dim">{trends.length} logged runs</span>
-          </div>
-          <div className="chart-wrap">
-            <canvas ref={canvasRef}></canvas>
-          </div>
+          <div className="card-header"><h2>PACE vs HEART RATE</h2><span className="text-sm dim">{trends.length} logged runs</span></div>
+          <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>
         </div>
       );
     }
@@ -733,40 +789,23 @@
       const display = runs.slice(0, 20);
       return (
         <div className="card">
-          <div className="card-header">
-            <h2>RECENT RUNS</h2>
-            <span className="text-sm dim">{runs.length} total</span>
-          </div>
+          <div className="card-header"><h2>RECENT RUNS</h2><span className="text-sm dim">{runs.length} total</span></div>
           <div style={{ overflowX: 'auto' }}>
             <table className="run-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Dist</th>
-                  <th>Time</th>
-                  <th>Pace</th>
-                  <th>HR</th>
-                  <th>Strain</th>
-                  <th>Recovery</th>
-                  <th>Shoe</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Date</th><th>Dist</th><th>Time</th><th>Pace</th><th>HR</th><th>Strain</th><th>Recovery</th><th>Shoe</th></tr></thead>
               <tbody>
-                {display.map((r, i) => {
-                  const shoeName = SHOE_DISPLAY[r.shoes] || r.shoes || '\u2014';
-                  return (
-                    <tr key={i}>
-                      <td>{r.date || '\u2014'}</td>
-                      <td>{r.distance_miles ? parseFloat(r.distance_miles).toFixed(1) : '\u2014'}</td>
-                      <td>{r.time_minutes ? parseFloat(r.time_minutes).toFixed(1) : '\u2014'}</td>
-                      <td className="green">{r.pace_per_mile || '\u2014'}</td>
-                      <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) : '\u2014'}</td>
-                      <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '\u2014'}</td>
-                      <td className={recoveryColor(r.recovery_score)}>{r.recovery_score != null ? Math.round(r.recovery_score) + '%' : '\u2014'}</td>
-                      <td className="dim" style={{ fontSize: 11 }}>{shoeName}</td>
-                    </tr>
-                  );
-                })}
+                {display.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.date || '\u2014'}</td>
+                    <td>{r.distance_miles ? parseFloat(r.distance_miles).toFixed(1) : '\u2014'}</td>
+                    <td>{r.time_minutes ? parseFloat(r.time_minutes).toFixed(1) : '\u2014'}</td>
+                    <td className="green">{r.pace_per_mile || '\u2014'}</td>
+                    <td>{r.avg_hr ? Math.round(parseFloat(r.avg_hr)) : '\u2014'}</td>
+                    <td>{r.strain ? parseFloat(r.strain).toFixed(1) : '\u2014'}</td>
+                    <td className={recoveryColor(r.recovery_score)}>{r.recovery_score != null ? Math.round(r.recovery_score) + '%' : '\u2014'}</td>
+                    <td className="dim" style={{ fontSize: 11 }}>{SHOE_DISPLAY[r.shoes] || r.shoes || '\u2014'}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -774,38 +813,673 @@
       );
     }
 
+    // ── Nutrition Tab ─────────────────────────────────────────────
+    function NutritionTab({ profile, briefing }) {
+      const [logs, setLogs] = useState([]);
+      const [calories, setCalories] = useState('');
+      const [protein, setProtein] = useState('');
+      const [notes, setNotes] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      useEffect(() => {
+        api('/api/nutrition').then(setLogs).catch(console.error);
+      }, []);
+
+      // Use briefing's training-day adjusted targets if available, else fallback
+      const nt = briefing?.nutrition_target;
+      const targetCals = nt ? nt.calories : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 13) : null);
+      const targetProtein = nt ? nt.protein_grams : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 0.9) : null);
+      const dayType = nt?.day_type;
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayLogs = logs.filter(l => l.date === todayStr);
+      const todayCals = todayLogs.reduce((s, l) => s + l.calories, 0);
+      const todayProtein = todayLogs.reduce((s, l) => s + l.protein_grams, 0);
+
+      // 7-day rolling average
+      const last7d = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const weekLogs = logs.filter(l => l.date >= last7d);
+      const uniqueDays7d = [...new Set(weekLogs.map(l => l.date))];
+      const weekCals = weekLogs.reduce((s, l) => s + l.calories, 0);
+      const weekProtein = weekLogs.reduce((s, l) => s + l.protein_grams, 0);
+      const avgCals7d = uniqueDays7d.length > 0 ? Math.round(weekCals / uniqueDays7d.length) : null;
+      const avgProtein7d = uniqueDays7d.length > 0 ? Math.round(weekProtein / uniqueDays7d.length) : null;
+
+      // Weekly protein compliance (% of days hitting target)
+      const proteinCompliance = (uniqueDays7d.length > 0 && targetProtein) ? (() => {
+        const dailyProtein = {};
+        weekLogs.forEach(l => { dailyProtein[l.date] = (dailyProtein[l.date] || 0) + l.protein_grams; });
+        const hitDays = Object.values(dailyProtein).filter(p => p >= targetProtein).length;
+        return Math.round((hitDays / uniqueDays7d.length) * 100);
+      })() : null;
+
+      const submit = async () => {
+        if (!calories || !protein) return;
+        setLoading(true);
+        try {
+          await api('/api/nutrition', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined }),
+          });
+          setCalories(''); setProtein(''); setNotes('');
+          api('/api/nutrition').then(setLogs).catch(console.error);
+        } catch (e) { console.error(e); }
+        setLoading(false);
+      };
+
+      const deleteEntry = async (id) => {
+        await api(`/api/nutrition/${id}`, { method: 'DELETE' });
+        setLogs(logs.filter(l => l.id !== id));
+      };
+
+      const dayLabel = dayType === 'hard' ? 'Hard day (+cals)' : dayType === 'rest' ? 'Rest day (deficit)' : dayType === 'easy' ? 'Easy day' : null;
+
+      return (
+        <>
+          {!profile && (
+            <div className="profile-banner">
+              <span className="msg">Set up your profile to see personalized nutrition targets.</span>
+            </div>
+          )}
+          <div className="card">
+            <div className="card-header"><h2 className="green">LOG NUTRITION</h2></div>
+            <div className="form-grid-3" style={{ marginBottom: 12 }}>
+              <div className="field">
+                <label>Calories</label>
+                <input type="number" placeholder="2500" value={calories} onChange={e => setCalories(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Protein (g)</label>
+                <input type="number" placeholder="180" value={protein} onChange={e => setProtein(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Notes</label>
+                <input type="text" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
+              </div>
+            </div>
+            <button className="btn" onClick={submit} disabled={loading || !calories || !protein} style={{ width: '100%' }}>
+              {loading ? <span className="spinner"></span> : 'Log'}
+            </button>
+          </div>
+
+          {targetCals && (
+            <>
+              {dayLabel && (
+                <div style={{ textAlign: 'center', margin: '12px 0 4px', fontSize: 12, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
+                  {dayLabel} — targets adjusted for today's workout
+                </div>
+              )}
+              <div className="two-col">
+                <div className="card">
+                  <div className="card-header"><h2>CALORIES TODAY</h2></div>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayCals}</span>
+                    <span className="dim" style={{ fontSize: 14 }}> / {targetCals}</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: Math.min(todayCals / targetCals * 100, 100) + '%', background: todayCals > targetCals ? '#FF4D4D' : '#00F19F' }}></div>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="card-header"><h2>PROTEIN TODAY</h2></div>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayProtein}g</span>
+                    <span className="dim" style={{ fontSize: 14 }}> / {targetProtein}g</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: Math.min(todayProtein / targetProtein * 100, 100) + '%', background: todayProtein >= targetProtein ? '#00F19F' : '#FFD600' }}></div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {avgCals7d != null && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><h2>7-DAY AVERAGES</h2></div>
+              <div className="metric-row">
+                <span className="metric-label">Avg Daily Calories</span>
+                <span className="metric-value">{avgCals7d}</span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">Avg Daily Protein</span>
+                <span className="metric-value">{avgProtein7d}g</span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">Days Logged (7d)</span>
+                <span className="metric-value">{uniqueDays7d.length} / 7</span>
+              </div>
+              {proteinCompliance != null && (
+                <div className="metric-row">
+                  <span className="metric-label">Protein Compliance</span>
+                  <span className={'metric-value ' + (proteinCompliance >= 80 ? 'green' : proteinCompliance >= 50 ? 'yellow' : 'red')}>
+                    {proteinCompliance}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header"><h2>RECENT ENTRIES</h2></div>
+            {logs.slice(0, 14).map(l => (
+              <div key={l.id} className="metric-row">
+                <span className="metric-label">{l.date}</span>
+                <span className="mono" style={{ fontSize: 13 }}>{l.calories} cal / {l.protein_grams}g protein</span>
+                <button className="btn-sm btn-outline" onClick={() => deleteEntry(l.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
+              </div>
+            ))}
+            {logs.length === 0 && <div className="dim">No entries yet</div>}
+          </div>
+        </>
+      );
+    }
+
+    // ── Body Comp Tab ─────────────────────────────────────────────
+    function BodyCompChart({ entries }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!entries || entries.length < 2) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const sorted = [...entries].reverse();
+        const datasets = [{
+          label: 'Weight (lbs)',
+          data: sorted.map(e => e.weight_lbs),
+          borderColor: '#00F19F',
+          backgroundColor: '#00F19F15',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: '#00F19F',
+          borderWidth: 2,
+          yAxisID: 'y',
+        }];
+        const hasBf = sorted.some(e => e.body_fat_pct != null);
+        if (hasBf) {
+          datasets.push({
+            label: 'Body Fat %',
+            data: sorted.map(e => e.body_fat_pct),
+            borderColor: '#FFD600',
+            backgroundColor: '#FFD60010',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: '#FFD600',
+            borderWidth: 2,
+            yAxisID: 'y1',
+          });
+        }
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, {
+          type: 'line',
+          data: { labels: sorted.map(e => e.date), datasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: '#888', font: { family: 'Outfit', size: 12 }, usePointStyle: true } },
+              tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12 },
+            },
+            scales: {
+              x: { ticks: { color: '#444', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1A1A1A' } },
+              y: { position: 'left', ticks: { color: '#00F19F80', font: { family: 'JetBrains Mono', size: 11 } }, grid: { color: '#1A1A1A' }, title: { display: true, text: 'Weight (lbs)', color: '#00F19F', font: { family: 'Outfit', size: 12 } } },
+              ...(hasBf ? { y1: { position: 'right', ticks: { color: '#FFD60080', font: { family: 'JetBrains Mono', size: 11 } }, grid: { display: false }, title: { display: true, text: 'Body Fat %', color: '#FFD600', font: { family: 'Outfit', size: 12 } } } } : {}),
+            },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [entries]);
+      if (!entries || entries.length < 2) return null;
+      return <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>;
+    }
+
+    function BodyCompTab({ profile }) {
+      const [entries, setEntries] = useState([]);
+      const [weight, setWeight] = useState('');
+      const [bf, setBf] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      useEffect(() => {
+        api('/api/body-comp').then(setEntries).catch(console.error);
+      }, []);
+
+      const submit = async () => {
+        if (!weight) return;
+        setLoading(true);
+        try {
+          await api('/api/body-comp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ weight_lbs: parseFloat(weight), body_fat_pct: bf ? parseFloat(bf) : undefined }),
+          });
+          setWeight(''); setBf('');
+          api('/api/body-comp').then(setEntries).catch(console.error);
+        } catch (e) { console.error(e); }
+        setLoading(false);
+      };
+
+      const deleteEntry = async (id) => {
+        await api(`/api/body-comp/${id}`, { method: 'DELETE' });
+        setEntries(entries.filter(e => e.id !== id));
+      };
+
+      const latest = entries[0];
+      const goalWeight = profile?.goal_weight_lbs;
+      const goalBf = profile?.goal_body_fat_pct;
+
+      // Compute weekly weight trend from entries
+      const weightTrend = (() => {
+        if (entries.length < 2) return null;
+        const sorted = [...entries].reverse();
+        const latest = sorted[sorted.length - 1];
+        const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+        const older = sorted.find(e => e.date <= weekAgo);
+        if (!older) return null;
+        const daysDiff = (new Date(latest.date) - new Date(older.date)) / 86400000;
+        if (daysDiff < 3) return null;
+        return ((latest.weight_lbs - older.weight_lbs) / daysDiff * 7).toFixed(1);
+      })();
+
+      // Projected weeks to goal
+      const weeksToWeightGoal = (() => {
+        if (!goalWeight || !latest || !weightTrend || parseFloat(weightTrend) >= 0) return null;
+        const remaining = latest.weight_lbs - goalWeight;
+        if (remaining <= 0) return 0;
+        const weeklyLoss = Math.abs(parseFloat(weightTrend));
+        if (weeklyLoss < 0.1) return null;
+        return Math.round(remaining / weeklyLoss);
+      })();
+
+      const weeksToBfGoal = (() => {
+        if (!goalBf || !latest?.body_fat_pct) return null;
+        const remaining = latest.body_fat_pct - goalBf;
+        if (remaining <= 0) return 0;
+        // Assume ~0.5% BF loss per week with proper deficit
+        return Math.round(remaining / 0.5);
+      })();
+
+      return (
+        <>
+          <div className="card">
+            <div className="card-header"><h2 className="green">LOG BODY COMP</h2></div>
+            <div className="form-grid-2" style={{ marginBottom: 12 }}>
+              <div className="field">
+                <label>Weight (lbs)</label>
+                <input type="number" step="0.1" placeholder="196.4" value={weight} onChange={e => setWeight(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Body Fat % (optional)</label>
+                <input type="number" step="0.1" placeholder="20.1" value={bf} onChange={e => setBf(e.target.value)} />
+              </div>
+            </div>
+            <button className="btn" onClick={submit} disabled={loading || !weight} style={{ width: '100%' }}>
+              {loading ? <span className="spinner"></span> : 'Log'}
+            </button>
+          </div>
+
+          {latest && (
+            <div className="two-col">
+              <div className="card">
+                <div className="card-header"><h2>CURRENT WEIGHT</h2></div>
+                <div style={{ textAlign: 'center' }}>
+                  <span className="mono" style={{ fontSize: 36, fontWeight: 700 }}>{latest.weight_lbs}</span>
+                  <span className="dim"> lbs</span>
+                </div>
+                {weightTrend && (
+                  <div style={{ textAlign: 'center', marginTop: 6 }}>
+                    <span className={'mono text-sm ' + (parseFloat(weightTrend) <= 0 ? 'green' : 'red')}>
+                      {parseFloat(weightTrend) > 0 ? '+' : ''}{weightTrend} lbs/week
+                    </span>
+                  </div>
+                )}
+                {goalWeight && (
+                  <div style={{ textAlign: 'center', marginTop: 6 }}>
+                    <span className="dim text-sm">Goal: {goalWeight} lbs</span>
+                    {weeksToWeightGoal != null && weeksToWeightGoal > 0 && (
+                      <span className="dim text-sm"> (~{weeksToWeightGoal} weeks)</span>
+                    )}
+                    {weeksToWeightGoal === 0 && <span className="green text-sm"> — Goal reached!</span>}
+                  </div>
+                )}
+              </div>
+              <div className="card">
+                <div className="card-header"><h2>BODY FAT</h2></div>
+                <div style={{ textAlign: 'center' }}>
+                  <span className="mono" style={{ fontSize: 36, fontWeight: 700 }}>{latest.body_fat_pct != null ? latest.body_fat_pct + '%' : '\u2014'}</span>
+                </div>
+                {goalBf && (
+                  <div style={{ textAlign: 'center', marginTop: 8 }}>
+                    <span className="dim text-sm">Goal: {goalBf}%</span>
+                    {weeksToBfGoal != null && weeksToBfGoal > 0 && (
+                      <span className="dim text-sm"> (~{weeksToBfGoal} weeks)</span>
+                    )}
+                    {weeksToBfGoal === 0 && <span className="green text-sm"> — Goal reached!</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {entries.length >= 2 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><h2>TREND</h2><span className="text-sm dim">{entries.length} entries</span></div>
+              <BodyCompChart entries={entries} />
+            </div>
+          )}
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-header"><h2>HISTORY</h2></div>
+            {entries.slice(0, 20).map(e => (
+              <div key={e.id} className="metric-row">
+                <span className="metric-label">{e.date}</span>
+                <span className="mono" style={{ fontSize: 13 }}>{e.weight_lbs} lbs{e.body_fat_pct != null ? ` / ${e.body_fat_pct}% BF` : ''}</span>
+                <button className="btn-sm btn-outline" onClick={() => deleteEntry(e.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
+              </div>
+            ))}
+            {entries.length === 0 && <div className="dim">No entries yet</div>}
+          </div>
+        </>
+      );
+    }
+
+    // ── Longevity Tab ─────────────────────────────────────────────
+    function BioTrendChart({ data, label, color, unit, lowerIsBetter }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!data || data.length < 2) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: data.map(d => d.date),
+            datasets: [{
+              label: label,
+              data: data.map(d => d.value),
+              borderColor: color,
+              backgroundColor: color + '15',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+              pointBackgroundColor: color,
+              borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12,
+                callbacks: { label: ctx => ` ${label}: ${ctx.parsed.y}${unit}` } },
+            },
+            scales: {
+              x: { ticks: { color: '#444', maxTicksLimit: 6, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1A1A1A' } },
+              y: { ticks: { color: color + '80', font: { family: 'JetBrains Mono', size: 11 } }, grid: { color: '#1A1A1A' } },
+            },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [data]);
+      if (!data || data.length < 2) return null;
+      // Compute trend
+      const first5 = data.slice(0, Math.min(5, data.length));
+      const last5 = data.slice(-Math.min(5, data.length));
+      const avgFirst = first5.reduce((s, d) => s + d.value, 0) / first5.length;
+      const avgLast = last5.reduce((s, d) => s + d.value, 0) / last5.length;
+      const diff = avgLast - avgFirst;
+      const improving = lowerIsBetter ? diff < 0 : diff > 0;
+      return (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span className="dim text-sm">{data.length} data points</span>
+            <span className={'mono text-sm ' + (Math.abs(diff) < 0.5 ? 'dim' : improving ? 'green' : 'red')}>
+              {diff > 0 ? '+' : ''}{diff.toFixed(1)}{unit}
+            </span>
+          </div>
+          <div style={{ height: 200 }}><canvas ref={canvasRef}></canvas></div>
+        </div>
+      );
+    }
+
+    function LongevityTab() {
+      const [data, setData] = useState(null);
+      const [metrics, setMetrics] = useState(null);
+      useEffect(() => {
+        api('/api/longevity').then(setData).catch(console.error);
+        api('/api/metrics').then(setMetrics).catch(console.error);
+      }, []);
+
+      if (!data && !metrics) return <div className="card"><div className="dim">Loading longevity data...</div></div>;
+
+      const vo2 = data?.vo2max_estimate;
+      const cat = vo2 ? vo2Category(vo2) : null;
+      const z2 = data?.zone2_minutes_week || 0;
+      const z2Target = data?.zone2_target || 150;
+      const rhrTrend = data?.rhr_trend || [];
+      const hrvTrend = data?.hrv_trend || [];
+
+      return (
+        <>
+          <div className="card">
+            <div className="card-header"><h2 className="green">VO2 MAX ESTIMATE</h2></div>
+            {vo2 ? (
+              <>
+                <div className="vo2-ring" style={{ border: `4px solid ${cat.color}` }}>
+                  <div className="big-num" style={{ color: cat.color }}>{vo2}</div>
+                  <div className="label">ml/kg/min</div>
+                </div>
+                <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                  <span style={{ color: cat.color, fontWeight: 600, fontSize: 16 }}>{cat.label}</span>
+                </div>
+                <div style={{ textAlign: 'center', fontSize: 13, color: '#888' }}>
+                  Top longevity predictor. Elite ({'>'} 50) = 80% lower mortality risk.
+                </div>
+              </>
+            ) : (
+              <div className="dim">Need more run data + profile setup for VO2 max estimate.</div>
+            )}
+          </div>
+
+          <div className="two-col">
+            <div className="card">
+              <div className="card-header"><h2>ZONE 2 THIS WEEK</h2></div>
+              <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{z2}</span>
+                <span className="dim" style={{ fontSize: 14 }}> / {z2Target} min</span>
+              </div>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: Math.min(z2 / z2Target * 100, 100) + '%', background: z2 >= z2Target ? '#00F19F' : '#FFD600' }}></div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>Target: 150+ min/week for longevity</div>
+            </div>
+            <div className="card">
+              <div className="card-header"><h2>TRAINING METRICS</h2></div>
+              {metrics ? (
+                <>
+                  <div className="metric-row">
+                    <span className="metric-label">EF Trend</span>
+                    <span className={'metric-value ' + (metrics.ef_trend === 'improving' ? 'green' : metrics.ef_trend === 'declining' ? 'red' : 'dim')}>
+                      {metrics.ef_trend || '\u2014'}
+                    </span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">CTL (Fitness)</span>
+                    <span className="metric-value">{metrics.ctl != null ? metrics.ctl.toFixed(1) : '\u2014'}</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">ATL (Fatigue)</span>
+                    <span className="metric-value">{metrics.atl != null ? metrics.atl.toFixed(1) : '\u2014'}</span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">TSB (Form)</span>
+                    <span className={'metric-value ' + (metrics.tsb != null && metrics.tsb > 0 ? 'green' : 'dim')}>
+                      {metrics.tsb != null ? metrics.tsb.toFixed(1) : '\u2014'}
+                    </span>
+                  </div>
+                  <div className="metric-row">
+                    <span className="metric-label">ACWR</span>
+                    <span className={'metric-value ' + (metrics.acwr_status === 'danger' ? 'red' : metrics.acwr_status === 'warning' ? 'yellow' : 'green')}>
+                      {metrics.acwr != null ? metrics.acwr.toFixed(2) : '\u2014'}
+                    </span>
+                  </div>
+                  {metrics.acwr_message && <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{metrics.acwr_message}</div>}
+                </>
+              ) : <div className="dim">Loading...</div>}
+            </div>
+          </div>
+
+          <div className="two-col" style={{ marginTop: 16 }}>
+            <div className="card">
+              <div className="card-header"><h2>RESTING HEART RATE</h2></div>
+              {rhrTrend.length >= 2 ? (
+                <BioTrendChart data={rhrTrend} label="RHR" color="#FF4D4D" unit=" bpm" lowerIsBetter={true} />
+              ) : (
+                <div className="dim">Need more recovery data for RHR trend.</div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>Lower is better. Tracks cardiovascular efficiency.</div>
+            </div>
+            <div className="card">
+              <div className="card-header"><h2>HRV TREND</h2></div>
+              {hrvTrend.length >= 2 ? (
+                <BioTrendChart data={hrvTrend} label="HRV" color="#00F19F" unit=" ms" lowerIsBetter={false} />
+              ) : (
+                <div className="dim">Need more recovery data for HRV trend.</div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>Higher is better. Reflects autonomic nervous system health.</div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // ── Settings Tab ──────────────────────────────────────────────
+    function SettingsTab({ profile, onSave }) {
+      const [form, setForm] = useState({
+        age: '', height_inches: '', weight_lbs: '', max_hr: '', body_fat_pct: '',
+        goal_marathon_time_min: '', goal_body_fat_pct: '', goal_weight_lbs: '',
+      });
+      const [saving, setSaving] = useState(false);
+      const [saved, setSaved] = useState(false);
+
+      useEffect(() => {
+        if (profile) {
+          setForm({
+            age: profile.age || '',
+            height_inches: profile.height_inches || '',
+            weight_lbs: profile.weight_lbs || '',
+            max_hr: profile.max_hr || '',
+            body_fat_pct: profile.body_fat_pct || '',
+            goal_marathon_time_min: profile.goal_marathon_time_min || '',
+            goal_body_fat_pct: profile.goal_body_fat_pct || '',
+            goal_weight_lbs: profile.goal_weight_lbs || '',
+          });
+        }
+      }, [profile]);
+
+      const save = async () => {
+        setSaving(true); setSaved(false);
+        try {
+          const data = {};
+          Object.entries(form).forEach(([k, v]) => { if (v !== '' && v != null) data[k] = Number(v); });
+          await api('/api/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          setSaved(true);
+          if (onSave) onSave();
+          setTimeout(() => setSaved(false), 2000);
+        } catch (e) { console.error(e); }
+        setSaving(false);
+      };
+
+      const f = (key) => ({
+        value: form[key],
+        onChange: e => setForm({ ...form, [key]: e.target.value }),
+      });
+
+      return (
+        <div className="card">
+          <div className="card-header"><h2 className="green">PROFILE & GOALS</h2></div>
+
+          <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Body</h3>
+          <div className="form-grid-3" style={{ marginBottom: 20 }}>
+            <div className="field"><label>Age</label><input type="number" placeholder="34" {...f('age')} /></div>
+            <div className="field"><label>Height (inches)</label><input type="number" placeholder="73" {...f('height_inches')} /></div>
+            <div className="field"><label>Weight (lbs)</label><input type="number" step="0.1" placeholder="200" {...f('weight_lbs')} /></div>
+            <div className="field"><label>Max HR</label><input type="number" placeholder="Auto from age" {...f('max_hr')} /></div>
+            <div className="field"><label>Body Fat %</label><input type="number" step="0.1" placeholder="22" {...f('body_fat_pct')} /></div>
+          </div>
+
+          <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Goals</h3>
+          <div className="form-grid-3" style={{ marginBottom: 20 }}>
+            <div className="field"><label>Marathon Time (min)</label><input type="number" placeholder="180" {...f('goal_marathon_time_min')} /></div>
+            <div className="field"><label>Target Body Fat %</label><input type="number" step="0.1" placeholder="16" {...f('goal_body_fat_pct')} /></div>
+            <div className="field"><label>Target Weight (lbs)</label><input type="number" step="0.1" placeholder="185" {...f('goal_weight_lbs')} /></div>
+          </div>
+
+          <button className="btn" onClick={save} disabled={saving} style={{ width: '100%' }}>
+            {saving ? <span className="spinner"></span> : saved ? 'Saved!' : 'Save Profile'}
+          </button>
+        </div>
+      );
+    }
+
     // ── App ──────────────────────────────────────────────────────
 
     function App() {
+      const [tab, setTab] = useState('dashboard');
       const [runs, setRuns] = useState([]);
       const [recovery, setRecovery] = useState(null);
       const [shoes, setShoes] = useState([]);
       const [trends, setTrends] = useState([]);
       const [snapshot, setSnapshot] = useState(null);
       const [briefing, setBriefing] = useState(null);
+      const [profile, setProfile] = useState(null);
 
       const loadAll = useCallback(() => {
-        api('/api/runs').then(setRuns);
-        api('/api/recovery/today').then(setRecovery);
-        api('/api/shoes').then(setShoes);
-        api('/api/trends').then(setTrends);
-        api('/api/snapshot').then(setSnapshot);
-        api('/api/briefing').then(setBriefing);
+        api('/api/runs').then(setRuns).catch(e => console.error('Failed to load runs:', e));
+        api('/api/recovery/today').then(setRecovery).catch(e => console.error('Failed to load recovery:', e));
+        api('/api/shoes').then(setShoes).catch(e => console.error('Failed to load shoes:', e));
+        api('/api/trends').then(setTrends).catch(e => console.error('Failed to load trends:', e));
+        api('/api/snapshot').then(setSnapshot).catch(e => console.error('Failed to load snapshot:', e));
+        api('/api/briefing').then(setBriefing).catch(e => console.error('Failed to load briefing:', e));
+        api('/api/profile').then(setProfile).catch(e => console.error('Failed to load profile:', e));
       }, []);
 
       useEffect(() => { loadAll(); }, [loadAll]);
 
       return (
         <div>
-          <Header />
-          <MorningBriefing briefing={briefing} />
-          <LogRunCard onLogged={loadAll} />
-          <div className="two-col">
-            <ShoeTracker shoes={shoes} />
-            <SnapshotCard snapshot={snapshot} recovery={recovery} />
-          </div>
-          <TrendChart trends={trends} />
-          <RecentRuns runs={runs} />
+          <Header tab={tab} setTab={setTab} />
+
+          {!profile && tab === 'dashboard' && (
+            <div className="profile-banner">
+              <span className="msg">Set up your profile to unlock personalized coaching, VO2 max, and nutrition targets.</span>
+              <button className="btn btn-sm" onClick={() => setTab('settings')}>Set Up Profile</button>
+            </div>
+          )}
+
+          {tab === 'dashboard' && (
+            <>
+              <MorningBriefing briefing={briefing} />
+              <LogRunCard onLogged={loadAll} />
+              <div className="two-col">
+                <ShoeTracker shoes={shoes} />
+                <SnapshotCard snapshot={snapshot} recovery={recovery} />
+              </div>
+              <TrendChart trends={trends} />
+              <RecentRuns runs={runs} />
+            </>
+          )}
+
+          {tab === 'nutrition' && <NutritionTab profile={profile} briefing={briefing} />}
+          {tab === 'body' && <BodyCompTab profile={profile} />}
+          {tab === 'longevity' && <LongevityTab />}
+          {tab === 'settings' && <SettingsTab profile={profile} onSave={loadAll} />}
         </div>
       );
     }
