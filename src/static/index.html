@@ -1625,6 +1625,7 @@
             <div className="field"><label>Weight (lbs)</label><input type="number" step="0.1" placeholder="200" {...f('weight_lbs')} /></div>
             <div className="field"><label>Max HR</label><input type="number" placeholder="Auto from age" {...f('max_hr')} /></div>
             <div className="field"><label>Body Fat %</label><input type="number" step="0.1" placeholder="22" {...f('body_fat_pct')} /></div>
+            <div className="field"><label>RMR (cal/day)</label><input type="number" placeholder={estimatedRmr ? `${estimatedRmr} est.` : '1800'} {...f('rmr_override')} /></div>
           </div>
 
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Goals</h3>
@@ -1637,14 +1638,10 @@
 
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Nutrition Targets</h3>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-            {form.rmr_override
-              ? `Using your RMR: ${parseInt(form.rmr_override).toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. `
-              : (estimatedRmr
-                ? `Mifflin-St Jeor estimate: RMR ~${estimatedRmr.toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. Set your measured RMR below to override. `
-                : (autoCalories ? `Estimated: ~${autoCalories.toLocaleString()} cal/day. ` : ''))}
+            {autoCalories ? `TDEE ~${autoCalories.toLocaleString()} cal/day. ` : ''}
+            Leave blank to auto-calculate from your RMR.
           </div>
-          <div className="form-grid-3" style={{ marginBottom: 20 }}>
-            <div className="field"><label>RMR (cal/day)</label><input type="number" placeholder={estimatedRmr ? `Auto: ${estimatedRmr}` : '1800'} {...f('rmr_override')} /></div>
+          <div className="form-grid-2" style={{ marginBottom: 20 }}>
             <div className="field"><label>Daily Calorie Target</label><input type="number" placeholder={autoCalories ? `Auto: ${autoCalories}` : '2500'} {...f('goal_calorie_target')} /></div>
             <div className="field"><label>Daily Protein Target (g)</label><input type="number" placeholder={autoProtein ? `Auto: ${autoProtein}` : '180'} {...f('goal_protein_target_grams')} /></div>
           </div>
