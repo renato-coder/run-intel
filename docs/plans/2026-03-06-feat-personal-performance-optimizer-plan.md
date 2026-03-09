@@ -375,7 +375,7 @@ class MetricsSnapshot:
 - [x] `/api/metrics` returns current CTL, ATL, TSB, ACWR, EF, VDOT as JSON
 - [x] `generate_coaching_insight` refactored to use services/coaching.py
 - [x] All computation functions are pure (no DB access) and independently testable
-- [ ] Backfill script computes EF for 924 historical runs (batch of 100, ~2-5s total)
+- [x] Backfill endpoint POST /api/backfill computes EF for all historical runs
 
 **Effort:** Large
 
@@ -411,12 +411,12 @@ Form: weight + body fat % + optional photo. Shows:
 - Projected date to reach target BF%
 
 **Acceptance Criteria:**
-- [ ] Nutrition log: calories + protein with daily targets shown
-- [ ] 7-day rolling average displayed
-- [ ] Body comp log: weight + BF% with trend charts
-- [ ] Progress photo upload and timeline display
-- [ ] Projected timeline to reach body fat goal
-- [ ] Caloric target adjusts for training days (more cals on hard/long run days)
+- [x] Nutrition log: calories + protein with daily targets shown
+- [x] 7-day rolling average displayed
+- [x] Body comp log: weight + BF% with trend charts
+- [ ] Progress photo upload and timeline display (deferred — no storage infra)
+- [x] Projected timeline to reach body fat goal
+- [x] Caloric target adjusts for training days (more cals on hard/long run days)
 
 **Effort:** Medium
 
@@ -458,7 +458,7 @@ Zone 2 (60-70% max HR) is the foundation of both marathon performance and longev
 - [x] VO2 max estimated from running data + Whoop biometrics
 - [x] Longevity zone displayed with clear visual indicator
 - [x] Zone 2 minutes tracked weekly from Whoop zone data
-- [ ] Resting HR and HRV trends displayed as longevity indicators
+- [x] Resting HR and HRV trends displayed as longevity indicators
 - [x] `/api/longevity` endpoint returns VO2 max, zone2 minutes, longevity score
 
 **Effort:** Medium
@@ -620,23 +620,23 @@ New endpoints follow existing patterns:
 
 ### Functional Requirements
 
-- [ ] User can set goals (marathon time, body fat target)
-- [ ] User can log daily nutrition (calories + protein)
-- [ ] User can log body composition (weight + BF%)
-- [ ] User can upload progress photos
-- [ ] App computes EF, VDOT, TSS, CTL, ATL, TSB, ACWR from run data
-- [ ] App estimates VO2 max from available data
-- [ ] App tracks Zone 2 minutes per week
-- [ ] Morning briefing prescribes specific daily workout
-- [ ] Pace progression clearly shown: improving / plateau / declining
-- [ ] Projected dates shown for marathon and body comp goals
+- [x] User can set goals (marathon time, body fat target)
+- [x] User can log daily nutrition (calories + protein)
+- [x] User can log body composition (weight + BF%)
+- [ ] User can upload progress photos (deferred — no storage infra)
+- [x] App computes EF, VDOT, TSS, CTL, ATL, TSB, ACWR from run data
+- [x] App estimates VO2 max from available data
+- [x] App tracks Zone 2 minutes per week
+- [x] Morning briefing prescribes specific daily workout
+- [x] Pace progression clearly shown: improving / plateau / declining
+- [x] Projected dates shown for marathon and body comp goals
 
 ### Non-Functional Requirements
 
-- [ ] All new endpoints respond in < 500ms
-- [ ] Photo uploads capped at 5MB per image
-- [ ] Graceful degradation when any data source is missing
-- [ ] No new external dependencies beyond what's in requirements.txt (except Pillow for photo thumbnails)
+- [x] All new endpoints respond in < 500ms (compute on-the-fly from indexed queries)
+- [ ] Photo uploads capped at 5MB per image (deferred)
+- [x] Graceful degradation when any data source is missing
+- [x] No new external dependencies beyond what's in requirements.txt
 
 ## Success Metrics
 

@@ -814,7 +814,7 @@
     }
 
     // ── Nutrition Tab ─────────────────────────────────────────────
-    function NutritionTab({ profile }) {
+    function NutritionTab({ profile, briefing }) {
       const [logs, setLogs] = useState([]);
       const [calories, setCalories] = useState('');
       const [protein, setProtein] = useState('');
@@ -825,13 +825,33 @@
         api('/api/nutrition').then(setLogs).catch(console.error);
       }, []);
 
-      const targetCals = profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 13) : null;
-      const targetProtein = profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 0.9) : null;
+      // Use briefing's training-day adjusted targets if available, else fallback
+      const nt = briefing?.nutrition_target;
+      const targetCals = nt ? nt.calories : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 13) : null);
+      const targetProtein = nt ? nt.protein_grams : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 0.9) : null);
+      const dayType = nt?.day_type;
 
       const todayStr = new Date().toISOString().slice(0, 10);
       const todayLogs = logs.filter(l => l.date === todayStr);
       const todayCals = todayLogs.reduce((s, l) => s + l.calories, 0);
       const todayProtein = todayLogs.reduce((s, l) => s + l.protein_grams, 0);
+
+      // 7-day rolling average
+      const last7d = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const weekLogs = logs.filter(l => l.date >= last7d);
+      const uniqueDays7d = [...new Set(weekLogs.map(l => l.date))];
+      const weekCals = weekLogs.reduce((s, l) => s + l.calories, 0);
+      const weekProtein = weekLogs.reduce((s, l) => s + l.protein_grams, 0);
+      const avgCals7d = uniqueDays7d.length > 0 ? Math.round(weekCals / uniqueDays7d.length) : null;
+      const avgProtein7d = uniqueDays7d.length > 0 ? Math.round(weekProtein / uniqueDays7d.length) : null;
+
+      // Weekly protein compliance (% of days hitting target)
+      const proteinCompliance = (uniqueDays7d.length > 0 && targetProtein) ? (() => {
+        const dailyProtein = {};
+        weekLogs.forEach(l => { dailyProtein[l.date] = (dailyProtein[l.date] || 0) + l.protein_grams; });
+        const hitDays = Object.values(dailyProtein).filter(p => p >= targetProtein).length;
+        return Math.round((hitDays / uniqueDays7d.length) * 100);
+      })() : null;
 
       const submit = async () => {
         if (!calories || !protein) return;
@@ -852,6 +872,8 @@
         await api(`/api/nutrition/${id}`, { method: 'DELETE' });
         setLogs(logs.filter(l => l.id !== id));
       };
+
+      const dayLabel = dayType === 'hard' ? 'Hard day (+cals)' : dayType === 'rest' ? 'Rest day (deficit)' : dayType === 'easy' ? 'Easy day' : null;
 
       return (
         <>
@@ -882,27 +904,60 @@
           </div>
 
           {targetCals && (
-            <div className="two-col">
-              <div className="card">
-                <div className="card-header"><h2>CALORIES TODAY</h2></div>
-                <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                  <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayCals}</span>
-                  <span className="dim" style={{ fontSize: 14 }}> / {targetCals}</span>
+            <>
+              {dayLabel && (
+                <div style={{ textAlign: 'center', margin: '12px 0 4px', fontSize: 12, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
+                  {dayLabel} — targets adjusted for today's workout
                 </div>
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: Math.min(todayCals / targetCals * 100, 100) + '%', background: todayCals > targetCals ? '#FF4D4D' : '#00F19F' }}></div>
+              )}
+              <div className="two-col">
+                <div className="card">
+                  <div className="card-header"><h2>CALORIES TODAY</h2></div>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayCals}</span>
+                    <span className="dim" style={{ fontSize: 14 }}> / {targetCals}</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: Math.min(todayCals / targetCals * 100, 100) + '%', background: todayCals > targetCals ? '#FF4D4D' : '#00F19F' }}></div>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="card-header"><h2>PROTEIN TODAY</h2></div>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayProtein}g</span>
+                    <span className="dim" style={{ fontSize: 14 }}> / {targetProtein}g</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: Math.min(todayProtein / targetProtein * 100, 100) + '%', background: todayProtein >= targetProtein ? '#00F19F' : '#FFD600' }}></div>
+                  </div>
                 </div>
               </div>
-              <div className="card">
-                <div className="card-header"><h2>PROTEIN TODAY</h2></div>
-                <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                  <span className="mono" style={{ fontSize: 32, fontWeight: 700 }}>{todayProtein}g</span>
-                  <span className="dim" style={{ fontSize: 14 }}> / {targetProtein}g</span>
-                </div>
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: Math.min(todayProtein / targetProtein * 100, 100) + '%', background: todayProtein >= targetProtein ? '#00F19F' : '#FFD600' }}></div>
-                </div>
+            </>
+          )}
+
+          {avgCals7d != null && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><h2>7-DAY AVERAGES</h2></div>
+              <div className="metric-row">
+                <span className="metric-label">Avg Daily Calories</span>
+                <span className="metric-value">{avgCals7d}</span>
               </div>
+              <div className="metric-row">
+                <span className="metric-label">Avg Daily Protein</span>
+                <span className="metric-value">{avgProtein7d}g</span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">Days Logged (7d)</span>
+                <span className="metric-value">{uniqueDays7d.length} / 7</span>
+              </div>
+              {proteinCompliance != null && (
+                <div className="metric-row">
+                  <span className="metric-label">Protein Compliance</span>
+                  <span className={'metric-value ' + (proteinCompliance >= 80 ? 'green' : proteinCompliance >= 50 ? 'yellow' : 'red')}>
+                    {proteinCompliance}%
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -922,6 +977,64 @@
     }
 
     // ── Body Comp Tab ─────────────────────────────────────────────
+    function BodyCompChart({ entries }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!entries || entries.length < 2) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const sorted = [...entries].reverse();
+        const datasets = [{
+          label: 'Weight (lbs)',
+          data: sorted.map(e => e.weight_lbs),
+          borderColor: '#00F19F',
+          backgroundColor: '#00F19F15',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: '#00F19F',
+          borderWidth: 2,
+          yAxisID: 'y',
+        }];
+        const hasBf = sorted.some(e => e.body_fat_pct != null);
+        if (hasBf) {
+          datasets.push({
+            label: 'Body Fat %',
+            data: sorted.map(e => e.body_fat_pct),
+            borderColor: '#FFD600',
+            backgroundColor: '#FFD60010',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: '#FFD600',
+            borderWidth: 2,
+            yAxisID: 'y1',
+          });
+        }
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, {
+          type: 'line',
+          data: { labels: sorted.map(e => e.date), datasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: '#888', font: { family: 'Outfit', size: 12 }, usePointStyle: true } },
+              tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12 },
+            },
+            scales: {
+              x: { ticks: { color: '#444', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1A1A1A' } },
+              y: { position: 'left', ticks: { color: '#00F19F80', font: { family: 'JetBrains Mono', size: 11 } }, grid: { color: '#1A1A1A' }, title: { display: true, text: 'Weight (lbs)', color: '#00F19F', font: { family: 'Outfit', size: 12 } } },
+              ...(hasBf ? { y1: { position: 'right', ticks: { color: '#FFD60080', font: { family: 'JetBrains Mono', size: 11 } }, grid: { display: false }, title: { display: true, text: 'Body Fat %', color: '#FFD600', font: { family: 'Outfit', size: 12 } } } } : {}),
+            },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [entries]);
+      if (!entries || entries.length < 2) return null;
+      return <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>;
+    }
+
     function BodyCompTab({ profile }) {
       const [entries, setEntries] = useState([]);
       const [weight, setWeight] = useState('');
@@ -947,9 +1060,45 @@
         setLoading(false);
       };
 
+      const deleteEntry = async (id) => {
+        await api(`/api/body-comp/${id}`, { method: 'DELETE' });
+        setEntries(entries.filter(e => e.id !== id));
+      };
+
       const latest = entries[0];
       const goalWeight = profile?.goal_weight_lbs;
       const goalBf = profile?.goal_body_fat_pct;
+
+      // Compute weekly weight trend from entries
+      const weightTrend = (() => {
+        if (entries.length < 2) return null;
+        const sorted = [...entries].reverse();
+        const latest = sorted[sorted.length - 1];
+        const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+        const older = sorted.find(e => e.date <= weekAgo);
+        if (!older) return null;
+        const daysDiff = (new Date(latest.date) - new Date(older.date)) / 86400000;
+        if (daysDiff < 3) return null;
+        return ((latest.weight_lbs - older.weight_lbs) / daysDiff * 7).toFixed(1);
+      })();
+
+      // Projected weeks to goal
+      const weeksToWeightGoal = (() => {
+        if (!goalWeight || !latest || !weightTrend || parseFloat(weightTrend) >= 0) return null;
+        const remaining = latest.weight_lbs - goalWeight;
+        if (remaining <= 0) return 0;
+        const weeklyLoss = Math.abs(parseFloat(weightTrend));
+        if (weeklyLoss < 0.1) return null;
+        return Math.round(remaining / weeklyLoss);
+      })();
+
+      const weeksToBfGoal = (() => {
+        if (!goalBf || !latest?.body_fat_pct) return null;
+        const remaining = latest.body_fat_pct - goalBf;
+        if (remaining <= 0) return 0;
+        // Assume ~0.5% BF loss per week with proper deficit
+        return Math.round(remaining / 0.5);
+      })();
 
       return (
         <>
@@ -978,9 +1127,20 @@
                   <span className="mono" style={{ fontSize: 36, fontWeight: 700 }}>{latest.weight_lbs}</span>
                   <span className="dim"> lbs</span>
                 </div>
+                {weightTrend && (
+                  <div style={{ textAlign: 'center', marginTop: 6 }}>
+                    <span className={'mono text-sm ' + (parseFloat(weightTrend) <= 0 ? 'green' : 'red')}>
+                      {parseFloat(weightTrend) > 0 ? '+' : ''}{weightTrend} lbs/week
+                    </span>
+                  </div>
+                )}
                 {goalWeight && (
-                  <div style={{ textAlign: 'center', marginTop: 8 }}>
+                  <div style={{ textAlign: 'center', marginTop: 6 }}>
                     <span className="dim text-sm">Goal: {goalWeight} lbs</span>
+                    {weeksToWeightGoal != null && weeksToWeightGoal > 0 && (
+                      <span className="dim text-sm"> (~{weeksToWeightGoal} weeks)</span>
+                    )}
+                    {weeksToWeightGoal === 0 && <span className="green text-sm"> — Goal reached!</span>}
                   </div>
                 )}
               </div>
@@ -992,9 +1152,20 @@
                 {goalBf && (
                   <div style={{ textAlign: 'center', marginTop: 8 }}>
                     <span className="dim text-sm">Goal: {goalBf}%</span>
+                    {weeksToBfGoal != null && weeksToBfGoal > 0 && (
+                      <span className="dim text-sm"> (~{weeksToBfGoal} weeks)</span>
+                    )}
+                    {weeksToBfGoal === 0 && <span className="green text-sm"> — Goal reached!</span>}
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {entries.length >= 2 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><h2>TREND</h2><span className="text-sm dim">{entries.length} entries</span></div>
+              <BodyCompChart entries={entries} />
             </div>
           )}
 
@@ -1004,6 +1175,7 @@
               <div key={e.id} className="metric-row">
                 <span className="metric-label">{e.date}</span>
                 <span className="mono" style={{ fontSize: 13 }}>{e.weight_lbs} lbs{e.body_fat_pct != null ? ` / ${e.body_fat_pct}% BF` : ''}</span>
+                <button className="btn-sm btn-outline" onClick={() => deleteEntry(e.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
               </div>
             ))}
             {entries.length === 0 && <div className="dim">No entries yet</div>}
@@ -1013,6 +1185,65 @@
     }
 
     // ── Longevity Tab ─────────────────────────────────────────────
+    function BioTrendChart({ data, label, color, unit, lowerIsBetter }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!data || data.length < 2) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: data.map(d => d.date),
+            datasets: [{
+              label: label,
+              data: data.map(d => d.value),
+              borderColor: color,
+              backgroundColor: color + '15',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+              pointBackgroundColor: color,
+              borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12,
+                callbacks: { label: ctx => ` ${label}: ${ctx.parsed.y}${unit}` } },
+            },
+            scales: {
+              x: { ticks: { color: '#444', maxTicksLimit: 6, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1A1A1A' } },
+              y: { ticks: { color: color + '80', font: { family: 'JetBrains Mono', size: 11 } }, grid: { color: '#1A1A1A' } },
+            },
+          },
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [data]);
+      if (!data || data.length < 2) return null;
+      // Compute trend
+      const first5 = data.slice(0, Math.min(5, data.length));
+      const last5 = data.slice(-Math.min(5, data.length));
+      const avgFirst = first5.reduce((s, d) => s + d.value, 0) / first5.length;
+      const avgLast = last5.reduce((s, d) => s + d.value, 0) / last5.length;
+      const diff = avgLast - avgFirst;
+      const improving = lowerIsBetter ? diff < 0 : diff > 0;
+      return (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span className="dim text-sm">{data.length} data points</span>
+            <span className={'mono text-sm ' + (Math.abs(diff) < 0.5 ? 'dim' : improving ? 'green' : 'red')}>
+              {diff > 0 ? '+' : ''}{diff.toFixed(1)}{unit}
+            </span>
+          </div>
+          <div style={{ height: 200 }}><canvas ref={canvasRef}></canvas></div>
+        </div>
+      );
+    }
+
     function LongevityTab() {
       const [data, setData] = useState(null);
       const [metrics, setMetrics] = useState(null);
@@ -1027,6 +1258,8 @@
       const cat = vo2 ? vo2Category(vo2) : null;
       const z2 = data?.zone2_minutes_week || 0;
       const z2Target = data?.zone2_target || 150;
+      const rhrTrend = data?.rhr_trend || [];
+      const hrvTrend = data?.hrv_trend || [];
 
       return (
         <>
@@ -1095,6 +1328,27 @@
                   {metrics.acwr_message && <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{metrics.acwr_message}</div>}
                 </>
               ) : <div className="dim">Loading...</div>}
+            </div>
+          </div>
+
+          <div className="two-col" style={{ marginTop: 16 }}>
+            <div className="card">
+              <div className="card-header"><h2>RESTING HEART RATE</h2></div>
+              {rhrTrend.length >= 2 ? (
+                <BioTrendChart data={rhrTrend} label="RHR" color="#FF4D4D" unit=" bpm" lowerIsBetter={true} />
+              ) : (
+                <div className="dim">Need more recovery data for RHR trend.</div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>Lower is better. Tracks cardiovascular efficiency.</div>
+            </div>
+            <div className="card">
+              <div className="card-header"><h2>HRV TREND</h2></div>
+              {hrvTrend.length >= 2 ? (
+                <BioTrendChart data={hrvTrend} label="HRV" color="#00F19F" unit=" ms" lowerIsBetter={false} />
+              ) : (
+                <div className="dim">Need more recovery data for HRV trend.</div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>Higher is better. Reflects autonomic nervous system health.</div>
             </div>
           </div>
         </>
@@ -1222,7 +1476,7 @@
             </>
           )}
 
-          {tab === 'nutrition' && <NutritionTab profile={profile} />}
+          {tab === 'nutrition' && <NutritionTab profile={profile} briefing={briefing} />}
           {tab === 'body' && <BodyCompTab profile={profile} />}
           {tab === 'longevity' && <LongevityTab />}
           {tab === 'settings' && <SettingsTab profile={profile} onSave={loadAll} />}

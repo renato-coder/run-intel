@@ -183,16 +183,25 @@ def get_briefing():
             progress["ef_change_30d_pct"] = round((metrics.ef_30d - metrics.ef_90d) / metrics.ef_90d * 100, 1)
         result["pace_progress"] = progress
 
-    # Add nutrition target
+    # Add nutrition target (adjusted by training day type)
     result["nutrition_target"] = None
     if profile_data.get("weight_lbs"):
         weight = profile_data["weight_lbs"]
-        target_cals = int(weight * 13)  # ~13 cal/lb for moderate deficit with activity
         target_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
+        # Caloric target scales with workout intensity
+        if rx.type in ("tempo", "intervals", "long"):
+            target_cals = int(weight * 15)  # maintenance on hard days
+            day_type = "hard"
+        elif rx.type == "rest":
+            target_cals = int(weight * 11)  # larger deficit on rest days
+            day_type = "rest"
+        else:
+            target_cals = int(weight * 13)  # moderate deficit on easy days
+            day_type = "easy"
         result["nutrition_target"] = {
             "calories": target_cals,
             "protein_grams": target_protein,
-            "day_type": rx.type if rx.type != "rest" else "rest",
+            "day_type": day_type,
             "yesterday": {
                 "calories": yesterday_cals,
                 "protein_grams": yesterday_protein,

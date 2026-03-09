@@ -1,12 +1,14 @@
-"""Metrics routes — GET /api/metrics, GET /api/longevity."""
+"""Metrics routes — GET /api/metrics, GET /api/longevity, POST /api/backfill."""
 
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify
 
-from database import UserProfile, get_session
-from services.coaching import prescribe_workout
+from database import Recovery, Run, UserProfile, get_session
+from services.coaching import compute_efficiency_factor, prescribe_workout
 from services.metrics_service import get_current_metrics
+from utils import pace_str_to_seconds
 
 bp = Blueprint("metrics", __name__)
 
@@ -50,10 +52,29 @@ def get_metrics():
 
 @bp.route("/api/longevity", methods=["GET"])
 def get_longevity():
-    """Return longevity metrics: VO2 max, Zone 2 minutes, category."""
+    """Return longevity metrics: VO2 max, Zone 2 minutes, category, RHR/HRV trends."""
+    today = datetime.now(timezone.utc).date()
+    cutoff_90d = today - timedelta(days=90)
+
     with get_session() as session:
         profile = session.query(UserProfile).first()
         snapshot = get_current_metrics(session, profile)
+
+        # RHR and HRV trends (last 90 days)
+        recovery_rows = (
+            session.query(Recovery)
+            .filter(Recovery.date >= cutoff_90d, Recovery.date <= today)
+            .order_by(Recovery.date)
+            .all()
+        )
+        rhr_trend = [
+            {"date": r.date.isoformat(), "value": round(r.resting_hr, 1)}
+            for r in recovery_rows if r.resting_hr is not None
+        ]
+        hrv_trend = [
+            {"date": r.date.isoformat(), "value": round(r.hrv, 1)}
+            for r in recovery_rows if r.hrv is not None
+        ]
 
     vo2max = snapshot.estimated_vo2max
     category = None
@@ -77,4 +98,34 @@ def get_longevity():
         "ef_trend": snapshot.ef_trend,
         "ef_30d": snapshot.ef_30d,
         "ef_90d": snapshot.ef_90d,
+        "rhr_trend": rhr_trend,
+        "hrv_trend": hrv_trend,
+    })
+
+
+@bp.route("/api/backfill", methods=["POST"])
+def backfill_metrics():
+    """Compute EF for all historical runs that have pace + HR data."""
+    with get_session() as session:
+        runs = session.query(Run).order_by(Run.date).all()
+        computed = 0
+        results = []
+        for r in runs:
+            pace_sec = pace_str_to_seconds(r.pace_per_mile)
+            if pace_sec and r.avg_hr:
+                ef = compute_efficiency_factor(pace_sec, r.avg_hr)
+                if ef:
+                    computed += 1
+                    results.append({
+                        "date": r.date.isoformat(),
+                        "distance": r.distance_miles,
+                        "pace": r.pace_per_mile,
+                        "avg_hr": r.avg_hr,
+                        "ef": ef,
+                    })
+
+    return jsonify({
+        "total_runs": len(runs),
+        "computed_ef": computed,
+        "sample": results[-5:] if results else [],
     })
