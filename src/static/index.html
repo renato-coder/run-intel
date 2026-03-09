@@ -590,13 +590,24 @@
             </div>
             {briefing.pace_progress && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Pace Progress</div>
+                <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Marathon Fitness</div>
                 <div style={{ fontSize: 13, color: '#CCC' }}>
-                  {briefing.pace_progress.vdot_current && `VDOT: ${briefing.pace_progress.vdot_current}`}
-                  {briefing.pace_progress.vdot_target && ` → Target: ${briefing.pace_progress.vdot_target}`}
-                  {briefing.pace_progress.ef_trend && ` | EF: ${briefing.pace_progress.ef_trend}`}
-                  {briefing.pace_progress.ef_change_30d_pct != null && ` (${briefing.pace_progress.ef_change_30d_pct > 0 ? '+' : ''}${briefing.pace_progress.ef_change_30d_pct}%)`}
+                  {briefing.pace_progress.marathon_estimate && briefing.pace_progress.marathon_estimate !== 'N/A' && (
+                    <span>Current: ~{briefing.pace_progress.marathon_estimate} marathon</span>
+                  )}
+                  {briefing.pace_progress.marathon_target && (
+                    <span> → Goal: sub-{briefing.pace_progress.marathon_target}</span>
+                  )}
                 </div>
+                {briefing.pace_progress.ef_trend && (
+                  <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
+                    {briefing.pace_progress.ef_trend === 'improving'
+                      ? `Your running efficiency improved ${Math.abs(briefing.pace_progress.ef_change_30d_pct || 0)}% this month`
+                      : briefing.pace_progress.ef_trend === 'declining'
+                        ? `Your running efficiency dipped ${Math.abs(briefing.pace_progress.ef_change_30d_pct || 0)}% this month — could be fatigue or increased training load`
+                        : 'Your running efficiency held steady this month'}
+                  </div>
+                )}
               </div>
             )}
             <div className="briefing-metrics">
@@ -918,12 +929,76 @@
 
           {targetCals && (
             <>
-              {(dayLabel || targetSource) && (
-                <div style={{ textAlign: 'center', margin: '12px 0 4px', fontSize: 12, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
-                  {dayLabel && <span>{dayLabel} — targets adjusted for today's workout</span>}
-                  {targetSource === 'custom' && <span style={{ color: '#888', marginLeft: dayLabel ? 8 : 0 }}>(custom targets)</span>}
+              {/* Daily feedback sentence */}
+              <div className="card" style={{ textAlign: 'center', padding: '16px 24px' }}>
+                {todayLogs.length > 0 ? (
+                  <div style={{ fontSize: 15 }}>
+                    {todayCals > targetCals ? (
+                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — that's <span className="red">{(todayCals - targetCals).toLocaleString()} over</span> your {targetCals.toLocaleString()} target.</span>
+                    ) : todayCals < 1200 && todayCals > 0 ? (
+                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — <span className="red">too low</span>. Eating below 1,200 can slow your metabolism.</span>
+                    ) : (
+                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — <span className="green">{(targetCals - todayCals).toLocaleString()} under</span> your {targetCals.toLocaleString()} target. On track.</span>
+                    )}
+                    <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
+                      Protein: {todayProtein}g / {targetProtein}g ({targetProtein > 0 ? Math.round(todayProtein / targetProtein * 100) : 0}%)
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 15, color: '#888' }}>
+                    No meals logged yet today. Target: {targetCals.toLocaleString()} cal / {targetProtein}g protein.
+                  </div>
+                )}
+                {dayLabel && (
+                  <div style={{ fontSize: 12, marginTop: 8, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
+                    {dayLabel} — targets adjusted for today's workout
+                    {targetSource === 'custom' && <span style={{ color: '#666', marginLeft: 6 }}>(custom override)</span>}
+                  </div>
+                )}
+              </div>
+
+              {/* RMR deficit breakdown (if available) */}
+              {nt?.rmr && (
+                <div className="card" style={{ padding: '16px 20px' }}>
+                  <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Your Metabolism Breakdown</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center', marginBottom: 12 }}>
+                    <div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.rmr.toLocaleString()}</div>
+                      <div className="dim text-sm">RMR</div>
+                    </div>
+                    <div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.rmr_adapted.toLocaleString()}</div>
+                      <div className="dim text-sm">Adapted (-10%)</div>
+                    </div>
+                    <div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.tdee.toLocaleString()}</div>
+                      <div className="dim text-sm">TDEE</div>
+                    </div>
+                    <div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#00F19F' }}>{targetCals.toLocaleString()}</div>
+                      <div className="dim text-sm">Target</div>
+                    </div>
+                  </div>
+                  {nt.daily_deficit > 0 && (
+                    <div style={{ fontSize: 13, color: '#999', textAlign: 'center' }}>
+                      Daily deficit: {nt.daily_deficit} cal ({nt.weekly_loss_rate} lbs/week)
+                      {nt.weeks_to_goal && (
+                        <span> — goal in ~{Math.round(nt.weeks_to_goal)} weeks ({new Date(Date.now() + nt.weeks_to_goal * 7 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})</span>
+                      )}
+                    </div>
+                  )}
+                  {!nt.is_safe && nt.warning && (
+                    <div style={{ fontSize: 13, color: '#FF4D4D', textAlign: 'center', marginTop: 8, padding: '6px 12px', background: '#FF4D4D15', borderRadius: 8 }}>{nt.warning}</div>
+                  )}
                 </div>
               )}
+              {nt?.warning && !nt?.rmr && (
+                <div className="card" style={{ textAlign: 'center', padding: '12px 20px', fontSize: 13, color: '#FF8C00' }}>
+                  {nt.warning}
+                </div>
+              )}
+
+              {/* Progress bars */}
               <div className="two-col">
                 <div className="card">
                   <div className="card-header"><h2>CALORIES TODAY</h2></div>
@@ -1309,7 +1384,7 @@
       );
     }
 
-    function LongevityTab() {
+    function LongevityTab({ setTab }) {
       const [data, setData] = useState(null);
       const [metrics, setMetrics] = useState(null);
       useEffect(() => {
@@ -1329,7 +1404,7 @@
 
       return (
         <>
-          {bioAge && (
+          {bioAge ? (
             <div className="card" style={{ textAlign: 'center', padding: '32px 24px' }}>
               <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase', color: '#888', marginBottom: 8 }}>Biological Age</div>
               <div className="mono" style={{ fontSize: 56, fontWeight: 700, lineHeight: 1, color: bioAge.delta <= 0 ? '#00F19F' : '#FF4D4D' }}>
@@ -1357,6 +1432,13 @@
                 <div style={{ fontSize: 13, color: '#888' }}>Trend: Stable</div>
               )}
               <div style={{ fontSize: 11, color: '#555', marginTop: 8 }}>{bioAge.disclaimer}</div>
+            </div>
+          ) : (
+            <div className="card" style={{ textAlign: 'center', padding: '24px' }}>
+              <div style={{ color: '#888', marginBottom: 12 }}>
+                {!vo2 ? 'Need more run data with heart rate for biological age estimate.' : 'Set your sex and age in Settings to see your biological age.'}
+              </div>
+              <button className="btn btn-sm" onClick={() => setTab('settings')}>Go to Settings</button>
             </div>
           )}
 
@@ -1456,7 +1538,7 @@
     function SettingsTab({ profile, onSave }) {
       const [form, setForm] = useState({
         age: '', sex: '', height_inches: '', weight_lbs: '', max_hr: '', body_fat_pct: '',
-        goal_marathon_time_min: '', goal_body_fat_pct: '', goal_weight_lbs: '',
+        goal_marathon_time_min: '', goal_body_fat_pct: '', goal_weight_lbs: '', goal_target_date: '',
         goal_calorie_target: '', goal_protein_target_grams: '',
       });
       const [saving, setSaving] = useState(false);
@@ -1474,6 +1556,7 @@
             goal_marathon_time_min: profile.goal_marathon_time_min || '',
             goal_body_fat_pct: profile.goal_body_fat_pct || '',
             goal_weight_lbs: profile.goal_weight_lbs || '',
+            goal_target_date: profile.goal_target_date || '',
             goal_calorie_target: profile.goal_calorie_target || '',
             goal_protein_target_grams: profile.goal_protein_target_grams || '',
           });
@@ -1484,11 +1567,11 @@
         setSaving(true); setSaved(false);
         try {
           const data = {};
+          const stringFields = ['sex', 'goal_target_date'];
           Object.entries(form).forEach(([k, v]) => {
             if (v === '' || v == null) return;
-            data[k] = k === 'sex' ? v : Number(v);
+            data[k] = stringFields.includes(k) ? v : Number(v);
           });
-          // Send sex as string, not number
           if (form.sex === '') data.sex = null;
           await api('/api/profile', {
             method: 'PUT',
@@ -1507,10 +1590,19 @@
         onChange: e => setForm({ ...form, [key]: e.target.value }),
       });
 
-      // Auto-calculated nutrition targets for display
+      // Compute RMR for display if we have enough data
       const weight = parseFloat(form.weight_lbs) || null;
-      const autoCalories = weight ? Math.round(weight * 13) : null;
-      const autoProtein = weight ? Math.round(weight * 0.9) : null;
+      const heightIn = parseInt(form.height_inches) || null;
+      const ageVal = parseInt(form.age) || null;
+      const sexVal = form.sex || null;
+      let estimatedRmr = null;
+      if (weight && heightIn && ageVal && sexVal) {
+        const wKg = weight / 2.205;
+        const hCm = heightIn * 2.54;
+        estimatedRmr = Math.round((10 * wKg) + (6.25 * hCm) - (5 * ageVal) + (sexVal === 'male' ? 5 : -161));
+      }
+      const autoCalories = estimatedRmr ? Math.round(estimatedRmr * 0.9 * 1.55) : (weight ? Math.round(weight * 13) : null);
+      const autoProtein = weight ? Math.max(Math.round(weight * 1.0), 150) : null;
 
       return (
         <div className="card">
@@ -1538,12 +1630,15 @@
             <div className="field"><label>Marathon Time (min)</label><input type="number" placeholder="180" {...f('goal_marathon_time_min')} /></div>
             <div className="field"><label>Target Body Fat %</label><input type="number" step="0.1" placeholder="16" {...f('goal_body_fat_pct')} /></div>
             <div className="field"><label>Target Weight (lbs)</label><input type="number" step="0.1" placeholder="185" {...f('goal_weight_lbs')} /></div>
+            <div className="field"><label>Target Date</label><input type="date" {...f('goal_target_date')} /></div>
           </div>
 
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Nutrition Targets</h3>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-            Leave blank to use auto-calculated targets{autoCalories ? ` (${autoCalories} cal / ${autoProtein}g protein based on weight)` : ''}.
-            Custom values override the auto calculation.
+            {estimatedRmr
+              ? `Based on Mifflin-St Jeor: RMR ~${estimatedRmr.toLocaleString()} cal/day → TDEE ~${autoCalories?.toLocaleString()} cal/day. `
+              : (autoCalories ? `Estimated: ~${autoCalories.toLocaleString()} cal/day. ` : '')}
+            Leave blank to use auto-calculated targets. Custom values override.
           </div>
           <div className="form-grid-2" style={{ marginBottom: 20 }}>
             <div className="field"><label>Daily Calorie Target</label><input type="number" placeholder={autoCalories ? `Auto: ${autoCalories}` : '2500'} {...f('goal_calorie_target')} /></div>
@@ -1609,7 +1704,7 @@
 
           {tab === 'nutrition' && <NutritionTab profile={profile} briefing={briefing} />}
           {tab === 'body' && <BodyCompTab profile={profile} />}
-          {tab === 'longevity' && <LongevityTab />}
+          {tab === 'longevity' && <LongevityTab setTab={setTab} />}
           {tab === 'settings' && <SettingsTab profile={profile} onSave={loadAll} />}
         </div>
       );

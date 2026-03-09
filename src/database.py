@@ -179,11 +179,17 @@ def _run_migrations(eng):
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_protein_target CHECK (goal_protein_target_grams >= 20 AND goal_protein_target_grams <= 500)",
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_sex CHECK (sex IN ('male', 'female'))",
     ]
+    data_fixes = [
+        # Fix run logged 2026-03-08 local time, stored as 03-09 due to UTC bug
+        "UPDATE runs SET date = '2026-03-08' WHERE date = '2026-03-09' AND distance_miles = 12.0 AND time_minutes = 140.0",
+    ]
     with eng.begin() as conn:
         for sql in columns:
             conn.execute(text(sql))
         for sql in constraints:
             conn.execute(text(f"DO $$ BEGIN {sql}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;"))
+        for sql in data_fixes:
+            conn.execute(text(sql))
 
 
 def init_db():

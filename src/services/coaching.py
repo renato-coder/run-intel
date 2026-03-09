@@ -5,6 +5,7 @@ No database access — all functions take data in, return results out.
 """
 
 from dataclasses import dataclass
+from datetime import date
 import math
 
 
@@ -328,3 +329,112 @@ def compute_biological_age(
         aging_direction="stable",  # caller should set from trend data
         disclaimer="Estimate based on cardiorespiratory fitness (ACSM tables)",
     )
+
+
+# ── Nutrition plan (Mifflin-St Jeor + deficit math) ──────────────
+
+
+@dataclass
+class NutritionPlan:
+    rmr: int                    # Mifflin-St Jeor RMR (kcal/day)
+    rmr_adapted: int            # RMR * 0.90 (metabolic adaptation during cut)
+    tdee: int                   # Adapted RMR * activity multiplier
+    daily_deficit: int          # Based on weight gap / weeks remaining
+    calorie_target: int         # TDEE - deficit (floored at 1200)
+    protein_target_grams: int   # 1g per lb of current weight
+    weekly_loss_rate: float     # lbs/week (capped at 1.0 for athletes)
+    weeks_to_goal: float | None
+    is_safe: bool
+    warning: str | None
+
+
+def compute_rmr(weight_lbs: float, height_inches: int, age: int, sex: str) -> int:
+    """Mifflin-St Jeor RMR. The evidence-based standard (ADA, 2005)."""
+    weight_kg = weight_lbs / 2.205
+    height_cm = height_inches * 2.54
+    rmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age)
+    rmr += 5 if sex == "male" else -161
+    return round(rmr)
+
+
+def compute_nutrition_plan(
+    weight_lbs: float,
+    height_inches: int,
+    age: int,
+    sex: str,
+    goal_weight_lbs: float | None = None,
+    goal_target_date: date | None = None,
+    activity_multiplier: float = 1.55,
+) -> NutritionPlan:
+    """Full nutrition target calculation for a weight-loss phase.
+
+    Mifflin-St Jeor RMR → 10% metabolic adaptation → TDEE → deficit.
+    Deficit derived from weight gap and timeline, capped for athlete safety.
+    """
+    rmr = compute_rmr(weight_lbs, height_inches, age, sex)
+    rmr_adapted = round(rmr * 0.90)
+    tdee = round(rmr_adapted * activity_multiplier)
+
+    today = date.today()
+    weeks_to_goal = None
+    warning = None
+
+    if (goal_weight_lbs and goal_target_date and goal_target_date > today
+            and weight_lbs > goal_weight_lbs):
+        weight_to_lose = weight_lbs - goal_weight_lbs
+        weeks_remaining = max((goal_target_date - today).days / 7, 1)
+        weekly_rate = weight_to_lose / weeks_remaining
+        weekly_rate = min(weekly_rate, 1.0)  # cap at 1 lb/week for athletes
+        daily_deficit = round(weekly_rate * 3500 / 7)
+        weeks_to_goal = round(weight_to_lose / weekly_rate, 1) if weekly_rate > 0 else None
+    else:
+        # Default: gentle 0.75 lb/week deficit
+        weekly_rate = 0.75 if (goal_weight_lbs and weight_lbs > goal_weight_lbs) else 0
+        daily_deficit = round(weekly_rate * 3500 / 7)
+
+    # Safety bounds
+    is_safe = True
+    if daily_deficit > 1000:
+        daily_deficit = 1000
+        weekly_rate = 1000 * 7 / 3500
+        warning = "Timeline requires aggressive deficit. Capped at 1,000 cal/day for safety."
+        is_safe = False
+
+    calorie_target = tdee - daily_deficit
+    if calorie_target < 1200:
+        calorie_target = 1200
+        daily_deficit = tdee - 1200
+        warning = "Calorie target floored at 1,200. Consider extending your timeline."
+        is_safe = False
+
+    protein = max(round(weight_lbs * 1.0), 150)
+
+    return NutritionPlan(
+        rmr=rmr,
+        rmr_adapted=rmr_adapted,
+        tdee=tdee,
+        daily_deficit=daily_deficit,
+        calorie_target=calorie_target,
+        protein_target_grams=protein,
+        weekly_loss_rate=round(weekly_rate, 2),
+        weeks_to_goal=weeks_to_goal,
+        is_safe=is_safe,
+        warning=warning,
+    )
+
+
+# ── VDOT ↔ Marathon time ────────────────────────────────────────
+
+
+def vdot_to_marathon_time(vdot: float) -> str:
+    """Convert VDOT to estimated marathon time string like '3:18'.
+
+    Uses the inverse of the linear fit in estimate_vdot().
+    """
+    if not vdot or vdot <= 30:
+        return "N/A"
+    pace_sec = (97.0 - vdot) / 0.1
+    marathon_sec = pace_sec * 26.2
+    hours = int(marathon_sec // 3600)
+    mins = int((marathon_sec % 3600) // 60)
+    return f"{hours}:{mins:02d}"

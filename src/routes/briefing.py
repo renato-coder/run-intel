@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify
 
 from briefing import generate_briefing
 from database import BodyComp, NutritionLog, Recovery, Run, UserProfile, get_session
-from services.coaching import categorize_vo2max, prescribe_workout
+from services.coaching import categorize_vo2max, compute_nutrition_plan, prescribe_workout, vdot_to_marathon_time
 from services.metrics_service import get_current_metrics
 
 bp = Blueprint("briefing", __name__)
@@ -167,61 +167,140 @@ def get_briefing():
     )
     result["workout"] = asdict(rx)
 
-    # Add pace progress
+    # Add pace progress with human-readable marathon times
     result["pace_progress"] = None
     if metrics.vdot or metrics.ef_30d:
         progress = {}
         if metrics.vdot:
             progress["vdot_current"] = metrics.vdot
+            progress["marathon_estimate"] = vdot_to_marathon_time(metrics.vdot)
         if profile_data.get("goal_marathon_time_min"):
             from services.coaching import estimate_vdot
-            target_vdot = estimate_vdot(26.2, profile_data["goal_marathon_time_min"])
+            goal_time = float(profile_data["goal_marathon_time_min"])
+            target_vdot = estimate_vdot(26.2, goal_time)
             progress["vdot_target"] = target_vdot
+            hours = int(goal_time // 60)
+            mins = int(goal_time % 60)
+            progress["marathon_target"] = f"{hours}:{mins:02d}"
         if metrics.ef_trend:
             progress["ef_trend"] = metrics.ef_trend
         if metrics.ef_30d and metrics.ef_90d and metrics.ef_90d > 0:
             progress["ef_change_30d_pct"] = round((metrics.ef_30d - metrics.ef_90d) / metrics.ef_90d * 100, 1)
         result["pace_progress"] = progress
 
-    # Add nutrition target (custom or auto-calculated by training day type)
+    # Add nutrition target — RMR-based (Mifflin-St Jeor) or custom override
     result["nutrition_target"] = None
-    if profile_data.get("weight_lbs"):
-        weight = profile_data["weight_lbs"]
-        auto_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
-        # Auto-calculated targets scale with workout intensity
+    # Weight priority: latest body comp → profile weight
+    current_weight = bc_data["weight_lbs"] if bc_data else profile_data.get("weight_lbs")
+    if current_weight:
+        current_weight = float(current_weight)
+        height = profile_data.get("height_inches")
+        age = profile_data.get("age")
+        sex = profile_data.get("sex")
+
+        # Determine training day type
         if rx.type in ("tempo", "intervals", "long"):
-            auto_cals = int(weight * 15)  # maintenance on hard days
             day_type = "hard"
         elif rx.type == "rest":
-            auto_cals = int(weight * 11)  # larger deficit on rest days
             day_type = "rest"
         else:
-            auto_cals = int(weight * 13)  # moderate deficit on easy days
             day_type = "easy"
 
         custom_cals = profile_data.get("goal_calorie_target")
         custom_protein = profile_data.get("goal_protein_target_grams")
-        if custom_cals or custom_protein:
-            target_cals = custom_cals or auto_cals
-            target_protein = custom_protein or auto_protein
-            target_source = "custom"
-        else:
-            target_cals = auto_cals
-            target_protein = auto_protein
-            target_source = "auto"
 
-        result["nutrition_target"] = {
-            "calories": target_cals,
-            "protein_grams": target_protein,
-            "day_type": day_type,
-            "target_source": target_source,
-            "auto_calories": auto_cals,
-            "auto_protein_grams": auto_protein,
-            "yesterday": {
-                "calories": yesterday_cals,
-                "protein_grams": yesterday_protein,
-            } if yesterday_cals is not None else None,
-        }
+        # If we have enough data for RMR-based calculation
+        if height and age and sex:
+            goal_date = profile_data.get("goal_target_date")
+            if isinstance(goal_date, str):
+                from datetime import date as date_cls
+                try:
+                    goal_date = date_cls.fromisoformat(goal_date)
+                except ValueError:
+                    goal_date = None
+
+            plan = compute_nutrition_plan(
+                weight_lbs=current_weight,
+                height_inches=height,
+                age=age,
+                sex=sex,
+                goal_weight_lbs=float(profile_data["goal_weight_lbs"]) if profile_data.get("goal_weight_lbs") else None,
+                goal_target_date=goal_date,
+            )
+
+            # Training-day adjustment: hard days get smaller deficit, rest days get larger
+            if day_type == "hard":
+                adjusted_cals = plan.tdee  # maintenance on hard days
+            elif day_type == "rest":
+                adjusted_cals = max(1200, plan.calorie_target - 100)
+            else:
+                adjusted_cals = plan.calorie_target
+
+            # Custom targets override auto-calculated
+            if custom_cals or custom_protein:
+                target_cals = custom_cals or adjusted_cals
+                target_protein = custom_protein or plan.protein_target_grams
+                target_source = "custom"
+            else:
+                target_cals = adjusted_cals
+                target_protein = plan.protein_target_grams
+                target_source = "auto"
+
+            result["nutrition_target"] = {
+                "calories": target_cals,
+                "protein_grams": target_protein,
+                "day_type": day_type,
+                "target_source": target_source,
+                "rmr": plan.rmr,
+                "rmr_adapted": plan.rmr_adapted,
+                "tdee": plan.tdee,
+                "daily_deficit": plan.daily_deficit,
+                "weekly_loss_rate": plan.weekly_loss_rate,
+                "weeks_to_goal": plan.weeks_to_goal,
+                "is_safe": plan.is_safe,
+                "warning": plan.warning,
+                "yesterday": {
+                    "calories": yesterday_cals,
+                    "protein_grams": yesterday_protein,
+                } if yesterday_cals is not None else None,
+            }
+        else:
+            # Fallback: old formula when profile is incomplete
+            auto_protein = max(int(current_weight * 0.9), 150)
+            if day_type == "hard":
+                auto_cals = int(current_weight * 15)
+            elif day_type == "rest":
+                auto_cals = int(current_weight * 11)
+            else:
+                auto_cals = int(current_weight * 13)
+
+            if custom_cals or custom_protein:
+                target_cals = custom_cals or auto_cals
+                target_protein = custom_protein or auto_protein
+                target_source = "custom"
+            else:
+                target_cals = auto_cals
+                target_protein = auto_protein
+                target_source = "auto"
+
+            result["nutrition_target"] = {
+                "calories": target_cals,
+                "protein_grams": target_protein,
+                "day_type": day_type,
+                "target_source": target_source,
+                "rmr": None,
+                "rmr_adapted": None,
+                "tdee": None,
+                "daily_deficit": None,
+                "weekly_loss_rate": None,
+                "weeks_to_goal": None,
+                "is_safe": True,
+                "warning": "Set height, age, and sex in Settings for RMR-based targets.",
+                "yesterday": {
+                    "calories": yesterday_cals,
+                    "protein_grams": yesterday_protein,
+                } if yesterday_cals is not None else None,
+            }
 
     # Add body comp
     result["body_comp"] = None
