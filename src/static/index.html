@@ -1348,13 +1348,16 @@
               backgroundColor: color + '15',
               fill: true,
               tension: 0.3,
-              pointRadius: 2,
+              pointRadius: 4,
+              pointHoverRadius: 7,
+              pointHitRadius: 20,
               pointBackgroundColor: color,
               borderWidth: 2,
             }],
           },
           options: {
             responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
             plugins: {
               legend: { display: false },
               tooltip: { backgroundColor: '#1A1A1A', titleColor: '#FFF', bodyColor: '#CCC', borderColor: '#2A2A2A', borderWidth: 1, padding: 12,
