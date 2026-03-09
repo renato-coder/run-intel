@@ -117,11 +117,18 @@ def _generate_coaching_insight(row: dict, recovery_data: dict | None) -> str:
 
 @bp.route("/api/runs", methods=["GET"])
 def get_runs():
-    """Return all runs as JSON, newest first, with recovery scores."""
+    """Return runs as JSON, newest first, with recovery scores. Supports ?days=90."""
+    try:
+        days = int(request.args.get("days", 90))
+    except (ValueError, TypeError):
+        return jsonify({"error": "days must be an integer"}), 400
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=days)
+
     with get_session() as session:
         results = (
             session.query(Run, Recovery.recovery_score)
             .outerjoin(Recovery, Run.date == Recovery.date)
+            .filter(Run.date >= cutoff)
             .order_by(Run.date.desc())
             .all()
         )
@@ -244,11 +251,17 @@ def get_shoes():
 
 @bp.route("/api/trends", methods=["GET"])
 def get_trends():
-    """Return date, pace_seconds, avg_hr for runs with valid pace data."""
+    """Return date, pace_seconds, avg_hr for runs with valid pace data. Supports ?days=90."""
+    try:
+        days = int(request.args.get("days", 90))
+    except (ValueError, TypeError):
+        return jsonify({"error": "days must be an integer"}), 400
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=days)
+
     with get_session() as session:
         runs = (
             session.query(Run)
-            .filter(Run.pace_per_mile.isnot(None), Run.avg_hr.isnot(None))
+            .filter(Run.pace_per_mile.isnot(None), Run.avg_hr.isnot(None), Run.date >= cutoff)
             .order_by(Run.date)
             .all()
         )

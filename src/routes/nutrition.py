@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request
 
 from database import NutritionLog, get_session
+from utils import validate_log_date
 
 bp = Blueprint("nutrition", __name__)
 
@@ -13,7 +14,10 @@ bp = Blueprint("nutrition", __name__)
 def get_nutrition():
     """Get nutrition logs. Supports ?days=30 and ?date=YYYY-MM-DD filters."""
     date_filter = request.args.get("date")
-    days = int(request.args.get("days", 30))
+    try:
+        days = int(request.args.get("days", 30))
+    except (ValueError, TypeError):
+        return jsonify({"error": "days must be an integer"}), 400
 
     with get_session() as session:
         query = session.query(NutritionLog).order_by(NutritionLog.date.desc())
@@ -61,17 +65,9 @@ def log_nutrition():
         return jsonify({"error": "calories and protein_grams must be >= 0"}), 400
 
     # Optional date (defaults to today UTC, backdating up to 7 days)
-    log_date = datetime.now(timezone.utc).date()
-    if data.get("date"):
-        try:
-            log_date = date.fromisoformat(data["date"])
-        except (ValueError, TypeError):
-            return jsonify({"error": "date must be YYYY-MM-DD format"}), 400
-        today = datetime.now(timezone.utc).date()
-        if log_date > today:
-            return jsonify({"error": "Cannot log future dates"}), 400
-        if (today - log_date).days > 7:
-            return jsonify({"error": "Cannot backdate more than 7 days"}), 400
+    log_date, err = validate_log_date(data.get("date"))
+    if err:
+        return jsonify({"error": err}), 400
 
     with get_session() as session:
         entry = NutritionLog(
@@ -106,9 +102,21 @@ def update_nutrition(entry_id):
             return jsonify({"error": "Not found"}), 404
 
         if "calories" in data:
-            entry.calories = int(data["calories"])
+            try:
+                cal = int(data["calories"])
+            except (ValueError, TypeError):
+                return jsonify({"error": "calories must be an integer"}), 400
+            if cal < 0:
+                return jsonify({"error": "calories must be >= 0"}), 400
+            entry.calories = cal
         if "protein_grams" in data:
-            entry.protein_grams = int(data["protein_grams"])
+            try:
+                prot = int(data["protein_grams"])
+            except (ValueError, TypeError):
+                return jsonify({"error": "protein_grams must be an integer"}), 400
+            if prot < 0:
+                return jsonify({"error": "protein_grams must be >= 0"}), 400
+            entry.protein_grams = prot
         if "notes" in data:
             entry.notes = data["notes"]
 

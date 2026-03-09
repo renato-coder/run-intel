@@ -41,9 +41,27 @@ def update_profile():
         except (ValueError, TypeError):
             return jsonify({"error": "goal_target_date must be YYYY-MM-DD format"}), 400
 
+    # Coerce numeric fields
+    int_fields = {"age", "height_inches", "max_hr"}
+    numeric_fields = {"weight_lbs", "body_fat_pct", "goal_marathon_time_min", "goal_body_fat_pct", "goal_weight_lbs"}
+    for k in list(updates.keys()):
+        if updates[k] is None or updates[k] == "":
+            updates[k] = None
+            continue
+        if k in int_fields:
+            try:
+                updates[k] = int(updates[k])
+            except (ValueError, TypeError):
+                return jsonify({"error": f"{k} must be an integer"}), 400
+        elif k in numeric_fields:
+            try:
+                updates[k] = float(updates[k])
+            except (ValueError, TypeError):
+                return jsonify({"error": f"{k} must be a number"}), 400
+
     # Auto-estimate max_hr if age provided and max_hr not set
     if "age" in updates and updates["age"] and "max_hr" not in updates:
-        updates.setdefault("max_hr", int(208 - 0.7 * int(updates["age"])))
+        updates.setdefault("max_hr", int(208 - 0.7 * updates["age"]))
 
     with get_session() as session:
         profile = session.query(UserProfile).first()

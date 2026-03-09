@@ -1,11 +1,12 @@
 """Body composition routes — CRUD /api/body-comp."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 
 from database import BodyComp, get_session
+from utils import validate_log_date
 
 bp = Blueprint("body_comp", __name__)
 
@@ -13,7 +14,10 @@ bp = Blueprint("body_comp", __name__)
 @bp.route("/api/body-comp", methods=["GET"])
 def get_body_comp():
     """Get body composition history. Supports ?days=90 filter."""
-    days = int(request.args.get("days", 90))
+    try:
+        days = int(request.args.get("days", 90))
+    except (ValueError, TypeError):
+        return jsonify({"error": "days must be an integer"}), 400
     cutoff = datetime.now(timezone.utc).date() - timedelta(days=days)
 
     with get_session() as session:
@@ -60,18 +64,10 @@ def log_body_comp():
         if body_fat < 3 or body_fat > 60:
             return jsonify({"error": "body_fat_pct must be between 3 and 60"}), 400
 
-    # Optional date
-    log_date = datetime.now(timezone.utc).date()
-    if data.get("date"):
-        try:
-            log_date = date.fromisoformat(data["date"])
-        except (ValueError, TypeError):
-            return jsonify({"error": "date must be YYYY-MM-DD format"}), 400
-        today = datetime.now(timezone.utc).date()
-        if log_date > today:
-            return jsonify({"error": "Cannot log future dates"}), 400
-        if (today - log_date).days > 7:
-            return jsonify({"error": "Cannot backdate more than 7 days"}), 400
+    # Optional date (defaults to today UTC, backdating up to 7 days)
+    log_date, err = validate_log_date(data.get("date"))
+    if err:
+        return jsonify({"error": err}), 400
 
     with get_session() as session:
         entry = BodyComp(

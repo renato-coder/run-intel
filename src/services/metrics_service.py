@@ -6,7 +6,7 @@ This is the layer between route handlers and pure computation.
 
 from datetime import datetime, timedelta, timezone
 
-from database import Recovery, Run, UserProfile, get_session
+from database import Recovery, Run, UserProfile
 from services.coaching import (
     MetricsSnapshot,
     compute_acwr,

@@ -113,6 +113,9 @@ def get_briefing():
         profile = session.query(UserProfile).first()
         metrics = get_current_metrics(session, profile)
 
+        # Extract profile values before session closes
+        profile_data = profile.to_dict() if profile else {}
+
         # Yesterday's nutrition
         yesterday_nutrition = (
             session.query(NutritionLog)
@@ -128,6 +131,12 @@ def get_briefing():
             .order_by(BodyComp.date.desc())
             .first()
         )
+        bc_data = None
+        if latest_bc:
+            bc_data = {
+                "weight_lbs": float(latest_bc.weight_lbs),
+                "body_fat_pct": float(latest_bc.body_fat_pct) if latest_bc.body_fat_pct else None,
+            }
 
         # Weight trend (7-day)
         week_ago_bc = (
@@ -136,6 +145,7 @@ def get_briefing():
             .order_by(BodyComp.date.desc())
             .first()
         )
+        week_ago_weight = float(week_ago_bc.weight_lbs) if week_ago_bc else None
 
     # Generate base briefing (existing logic)
     result = generate_briefing(today_recovery, recovery_history, run_history)
@@ -153,7 +163,7 @@ def get_briefing():
         tsb=metrics.tsb,
         acwr=metrics.acwr,
         vdot=metrics.vdot,
-        max_hr=profile.max_hr if profile else None,
+        max_hr=profile_data.get("max_hr"),
     )
     result["workout"] = asdict(rx)
 
@@ -163,9 +173,9 @@ def get_briefing():
         progress = {}
         if metrics.vdot:
             progress["vdot_current"] = metrics.vdot
-        if profile and profile.goal_marathon_time_min:
+        if profile_data.get("goal_marathon_time_min"):
             from services.coaching import estimate_vdot
-            target_vdot = estimate_vdot(26.2, float(profile.goal_marathon_time_min))
+            target_vdot = estimate_vdot(26.2, profile_data["goal_marathon_time_min"])
             progress["vdot_target"] = target_vdot
         if metrics.ef_trend:
             progress["ef_trend"] = metrics.ef_trend
@@ -175,9 +185,8 @@ def get_briefing():
 
     # Add nutrition target
     result["nutrition_target"] = None
-    if profile and profile.weight_lbs:
-        # Simple static target for v1
-        weight = float(profile.weight_lbs)
+    if profile_data.get("weight_lbs"):
+        weight = profile_data["weight_lbs"]
         target_cals = int(weight * 13)  # ~13 cal/lb for moderate deficit with activity
         target_protein = int(weight * 0.9)  # 0.9g/lb for deficit + training
         result["nutrition_target"] = {
@@ -192,19 +201,15 @@ def get_briefing():
 
     # Add body comp
     result["body_comp"] = None
-    if latest_bc:
-        bc = {
-            "weight_lbs": float(latest_bc.weight_lbs),
-            "body_fat_pct": float(latest_bc.body_fat_pct) if latest_bc.body_fat_pct else None,
-        }
-        if week_ago_bc:
-            weekly_change = float(latest_bc.weight_lbs) - float(week_ago_bc.weight_lbs)
+    if bc_data:
+        bc = dict(bc_data)
+        if week_ago_weight:
+            weekly_change = bc_data["weight_lbs"] - week_ago_weight
             bc["weight_trend_per_week"] = round(weekly_change, 1)
-        if latest_bc.body_fat_pct and profile and profile.goal_body_fat_pct:
-            current_bf = float(latest_bc.body_fat_pct)
-            target_bf = float(profile.goal_body_fat_pct)
+        if bc_data["body_fat_pct"] and profile_data.get("goal_body_fat_pct"):
+            current_bf = bc_data["body_fat_pct"]
+            target_bf = profile_data["goal_body_fat_pct"]
             if current_bf > target_bf:
-                # Rough estimate: ~0.5% BF/week at moderate deficit
                 weeks = round((current_bf - target_bf) / 0.5)
                 bc["target_body_fat_pct"] = target_bf
                 bc["weeks_to_goal"] = weeks

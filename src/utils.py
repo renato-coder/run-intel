@@ -69,6 +69,28 @@ def safe_int(val) -> int | None:
         return None
 
 
+def validate_log_date(date_str: str | None) -> tuple[object, str | None]:
+    """Validate an optional log date string.
+
+    Returns (date_obj, error_message).
+    If date_str is None, returns today UTC.
+    """
+    from datetime import date, timedelta
+
+    today = datetime.now(timezone.utc).date()
+    if not date_str:
+        return today, None
+    try:
+        log_date = date.fromisoformat(date_str)
+    except (ValueError, TypeError):
+        return None, "date must be YYYY-MM-DD format"
+    if log_date > today:
+        return None, "Cannot log future dates"
+    if (today - log_date).days > 7:
+        return None, "Cannot backdate more than 7 days"
+    return log_date, None
+
+
 def today_utc_start() -> str:
     """Return start-of-today in UTC as an ISO string."""
     return datetime.now(timezone.utc).replace(

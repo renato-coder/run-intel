@@ -8,7 +8,6 @@ All route logic lives in routes/ modules.
 import hmac
 import logging
 import sys
-from functools import wraps
 from pathlib import Path
 
 from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
