@@ -107,11 +107,13 @@ button:hover{opacity:0.85}
 # ── Auth helpers ──────────────────────────────────────────────────
 
 def require_auth(f):
-    """Decorator: redirect to login if no valid auth cookie."""
+    """Decorator: redirect to login if no valid auth cookie. Returns 401 JSON for API routes."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.cookies.get("auth_token", "")
         if not hmac.compare_digest(token, AUTH_TOKEN):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Unauthorized"}), 401
             return redirect("/login")
         return f(*args, **kwargs)
     return decorated
@@ -151,7 +153,7 @@ def fetch_and_cache_recovery(session) -> tuple[dict, str | None]:
 
     Returns (recovery_dict, date_iso) or ({defaults}, None) on failure.
     """
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     defaults = {"recovery_score": None, "hrv": None, "resting_hr": None}
 
     # Try Whoop API first
@@ -237,14 +239,14 @@ def generate_coaching_insight(row: dict, recovery_data: dict | None) -> str:
     pace_display = seconds_to_pace(today_pace_sec)
 
     # Query only recent runs with valid data (not all runs)
-    cutoff = date.fromisoformat(today_date) - timedelta(days=30) if today_date else date.today() - timedelta(days=30)
+    cutoff = date.fromisoformat(today_date) - timedelta(days=30) if today_date else datetime.now(timezone.utc).date() - timedelta(days=30)
 
     with get_session() as session:
         runs = (
             session.query(Run)
             .filter(
                 Run.date >= cutoff,
-                Run.date < date.fromisoformat(today_date) if today_date else date.today(),
+                Run.date < date.fromisoformat(today_date) if today_date else datetime.now(timezone.utc).date(),
                 Run.pace_per_mile.isnot(None),
                 Run.avg_hr.isnot(None),
             )
@@ -314,7 +316,7 @@ def index():
 @require_auth
 def get_briefing():
     """Return the morning briefing based on recovery, HRV, and strain data."""
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     cutoff_30d = today - timedelta(days=30)
 
     with get_session() as session:
@@ -374,7 +376,7 @@ def get_recovery_today():
     """Return today's recovery, fetching from Whoop if not cached."""
     with get_session() as session:
         recovery, recovery_date = fetch_and_cache_recovery(session)
-    return jsonify({"date": recovery_date or date.today().isoformat(), **recovery})
+    return jsonify({"date": recovery_date or datetime.now(timezone.utc).date().isoformat(), **recovery})
 
 
 @app.route("/api/shoes", methods=["GET"])
@@ -420,7 +422,7 @@ def get_trends():
 @require_auth
 def get_snapshot():
     """Return last 7d vs last 30d averages using SQL aggregates."""
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     d7 = today - timedelta(days=7)
     d30 = today - timedelta(days=30)
 

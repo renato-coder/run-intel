@@ -785,12 +785,12 @@
       const [briefing, setBriefing] = useState(null);
 
       const loadAll = useCallback(() => {
-        api('/api/runs').then(setRuns);
-        api('/api/recovery/today').then(setRecovery);
-        api('/api/shoes').then(setShoes);
-        api('/api/trends').then(setTrends);
-        api('/api/snapshot').then(setSnapshot);
-        api('/api/briefing').then(setBriefing);
+        api('/api/runs').then(setRuns).catch(e => console.error('Failed to load runs:', e));
+        api('/api/recovery/today').then(setRecovery).catch(e => console.error('Failed to load recovery:', e));
+        api('/api/shoes').then(setShoes).catch(e => console.error('Failed to load shoes:', e));
+        api('/api/trends').then(setTrends).catch(e => console.error('Failed to load trends:', e));
+        api('/api/snapshot').then(setSnapshot).catch(e => console.error('Failed to load snapshot:', e));
+        api('/api/briefing').then(setBriefing).catch(e => console.error('Failed to load briefing:', e));
       }, []);
 
       useEffect(() => { loadAll(); }, [loadAll]);

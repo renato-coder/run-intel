@@ -200,13 +200,16 @@ class WhoopClient:
                 continue
 
             if resp.status_code == 429 and attempt < max_retries:
-                wait = int(resp.headers.get("Retry-After", 60))
+                wait = min(int(resp.headers.get("Retry-After", 10)), 10)
                 logger.info("Rate limited. Waiting %ds (retry %d/%d)...", wait, attempt + 1, max_retries)
                 time.sleep(wait)
                 continue
 
             resp.raise_for_status()
             return resp.json()
+
+        # All retries exhausted — raise instead of returning None
+        raise RuntimeError(f"Whoop API request failed after {max_retries} retries: {endpoint}")
 
     def _paginate(self, endpoint: str, start: str | None = None, end: str | None = None) -> list[dict]:
         """Paginate through a collection endpoint, returning all records."""
