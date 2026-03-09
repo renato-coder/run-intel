@@ -3,7 +3,7 @@
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from briefing import generate_briefing
 from database import BodyComp, NutritionLog, Recovery, Run, UserProfile, get_session
@@ -132,8 +132,18 @@ def get_briefing():
     Includes: recovery status, workout prescription, pace progress,
     nutrition targets, body comp, and longevity metrics.
     Each section is null if no data is available (graceful degradation).
+    Accepts ?local_date=YYYY-MM-DD to align "today" with client timezone.
     """
-    today = datetime.now(timezone.utc).date()
+    # Use client's local date if provided, else fall back to UTC
+    local_date_str = request.args.get("local_date")
+    if local_date_str:
+        try:
+            from datetime import date as date_cls
+            today = date_cls.fromisoformat(local_date_str)
+        except ValueError:
+            today = datetime.now(timezone.utc).date()
+    else:
+        today = datetime.now(timezone.utc).date()
     cutoff_30d = today - timedelta(days=30)
     yesterday = today - timedelta(days=1)
 

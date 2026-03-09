@@ -1661,7 +1661,7 @@
           api('/api/shoes').then(setShoes),
           api('/api/trends').then(setTrends),
           api('/api/snapshot').then(setSnapshot),
-          api('/api/briefing').then(setBriefing),
+          api(`/api/briefing?local_date=${getLocalDateString()}`).then(setBriefing),
           api('/api/profile').then(setProfile),
         ]).catch(() => {});
       }, []);
