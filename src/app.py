@@ -38,51 +38,6 @@ limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
 # Create tables on startup
 init_db()
 
-# One-time: re-match Whoop data for the 03-08 run whose fields were cleared
-def _rematch_whoop_for_run():
-    """Re-fetch Whoop workout data for the 2026-03-08 12mi run if it has no HR data."""
-    from datetime import date, datetime, timedelta, timezone
-
-    from database import Run, get_session
-    from utils import find_closest_run, safe_float, safe_int, whoop_query_window
-    from whoop import WhoopClient
-
-    target_date = date(2026, 3, 8)
-    with get_session() as session:
-        run = session.query(Run).filter(
-            Run.date == target_date, Run.distance_miles == 12.0, Run.avg_hr.is_(None)
-        ).first()
-        if not run:
-            return  # Already matched or doesn't exist
-
-        try:
-            client = WhoopClient()
-            start = whoop_query_window(target_date)
-            workouts = client.get_workouts(start=start)
-            workout = find_closest_run(workouts, target_date=target_date)
-            if workout:
-                score = workout.get("score", {})
-                zones = score.get("zone_durations", {})
-                run.avg_hr = safe_int(score.get("average_heart_rate"))
-                run.max_hr = safe_int(score.get("max_heart_rate"))
-                run.strain = safe_float(score.get("strain"))
-                run.whoop_distance_meters = safe_float(score.get("distance_meter"))
-                run.zone_zero_milli = safe_int(zones.get("zone_zero_milli"))
-                run.zone_one_milli = safe_int(zones.get("zone_one_milli"))
-                run.zone_two_milli = safe_int(zones.get("zone_two_milli"))
-                run.zone_three_milli = safe_int(zones.get("zone_three_milli"))
-                run.zone_four_milli = safe_int(zones.get("zone_four_milli"))
-                run.zone_five_milli = safe_int(zones.get("zone_five_milli"))
-                logger.info("Re-matched Whoop data for 2026-03-08 run: HR=%s, strain=%s",
-                            run.avg_hr, run.strain)
-        except Exception:
-            logger.exception("Failed to re-match Whoop data for 2026-03-08 run")
-
-try:
-    _rematch_whoop_for_run()
-except Exception:
-    logger.warning("Whoop re-match failed (non-fatal)", exc_info=True)
-
 # Register route blueprints
 register_blueprints(app)
 
