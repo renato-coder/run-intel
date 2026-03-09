@@ -57,7 +57,7 @@ def _generate_coaching_insight(row: dict, recovery_data: dict | None) -> str:
 
     with get_session() as session:
         runs = (
-            session.query(Run)
+            session.query(Run.pace_per_mile, Run.avg_hr)
             .filter(
                 Run.date >= cutoff,
                 Run.date < date.fromisoformat(today_date) if today_date else datetime.now(timezone.utc).date(),
@@ -66,18 +66,19 @@ def _generate_coaching_insight(row: dict, recovery_data: dict | None) -> str:
             )
             .all()
         )
+        past_runs = [(r.pace_per_mile, r.avg_hr) for r in runs]
 
-    if not runs:
+    if not past_runs:
         insight = f"Building your baseline at {pace_display}/mi. Log a few more runs and I'll start giving pace recommendations."
         if recovery_line:
             insight += f" {recovery_line}"
         return insight
 
     similar_hrs = []
-    for r in runs:
-        r_pace = pace_str_to_seconds(r.pace_per_mile)
+    for r_pace_str, r_hr in past_runs:
+        r_pace = pace_str_to_seconds(r_pace_str)
         if r_pace and abs(r_pace - today_pace_sec) <= 30:
-            similar_hrs.append(r.avg_hr)
+            similar_hrs.append(r_hr)
 
     if len(similar_hrs) >= 3:
         avg_similar_hr = sum(similar_hrs) / len(similar_hrs)
