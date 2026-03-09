@@ -848,11 +848,10 @@
         api('/api/nutrition').then(setLogs).catch(console.error);
       }, []);
 
-      // Use briefing's training-day adjusted targets if available, else fallback
+      // Use briefing's workout-based budget if available, else fallback
       const nt = briefing?.nutrition_target;
       const targetCals = nt ? nt.calories : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 13) : null);
       const targetProtein = nt ? nt.protein_grams : (profile ? Math.round(parseFloat(profile.weight_lbs || 180) * 0.9) : null);
-      const dayType = nt?.day_type;
 
       const todayStr = getLocalDateString();
       const todayLogs = logs.filter(l => l.date === todayStr);
@@ -896,9 +895,6 @@
         setLogs(logs.filter(l => l.id !== id));
       };
 
-      const targetSource = nt?.target_source;
-      const dayLabel = dayType === 'hard' ? 'Hard day (+cals)' : dayType === 'rest' ? 'Rest day (deficit)' : dayType === 'easy' ? 'Easy day' : null;
-
       return (
         <>
           {!profile && (
@@ -929,16 +925,22 @@
 
           {targetCals && (
             <>
-              {/* Daily feedback sentence */}
+              {/* Daily budget feedback */}
               <div className="card" style={{ textAlign: 'center', padding: '16px 24px' }}>
                 {todayLogs.length > 0 ? (
                   <div style={{ fontSize: 15 }}>
+                    {nt?.rmr_adapted ? (
+                      <div style={{ fontSize: 13, color: '#999', marginBottom: 6 }}>
+                        Budget: {nt.rmr_adapted.toLocaleString()} {nt.is_cutting ? '(adapted RMR)' : '(RMR)'}
+                        {nt.workout_calories > 0 && <span> + {nt.workout_calories.toLocaleString()} (workout)</span>}
+                        {' = '}<strong className="mono">{targetCals.toLocaleString()}</strong>
+                      </div>
+                    ) : null}
+                    <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal. </span>
                     {todayCals > targetCals ? (
-                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — that's <span className="red">{(todayCals - targetCals).toLocaleString()} over</span> your {targetCals.toLocaleString()} target.</span>
-                    ) : todayCals < 1200 && todayCals > 0 ? (
-                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — <span className="red">too low</span>. Eating below 1,200 can slow your metabolism.</span>
+                      <span className="red">{(todayCals - targetCals).toLocaleString()} cal over budget.</span>
                     ) : (
-                      <span>You ate <strong className="mono">{todayCals.toLocaleString()}</strong> cal — <span className="green">{(targetCals - todayCals).toLocaleString()} under</span> your {targetCals.toLocaleString()} target. On track.</span>
+                      <span className="green">{(targetCals - todayCals).toLocaleString()} cal remaining.</span>
                     )}
                     <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
                       Protein: {todayProtein}g / {targetProtein}g ({targetProtein > 0 ? Math.round(todayProtein / targetProtein * 100) : 0}%)
@@ -946,49 +948,39 @@
                   </div>
                 ) : (
                   <div style={{ fontSize: 15, color: '#888' }}>
-                    No meals logged yet today. Target: {targetCals.toLocaleString()} cal / {targetProtein}g protein.
+                    Budget: {targetCals.toLocaleString()} cal. No meals logged yet.
                   </div>
                 )}
-                {dayLabel && (
-                  <div style={{ fontSize: 12, marginTop: 8, color: dayType === 'hard' ? '#00F19F' : dayType === 'rest' ? '#FF8C00' : '#888' }}>
-                    {dayLabel} — targets adjusted for today's workout
-                    {targetSource === 'custom' && <span style={{ color: '#666', marginLeft: 6 }}>(custom override)</span>}
-                  </div>
+                {nt?.target_source === 'custom' && (
+                  <div style={{ fontSize: 12, marginTop: 8, color: '#666' }}>Custom calorie target override</div>
                 )}
               </div>
 
-              {/* RMR deficit breakdown (if available) */}
+              {/* Budget breakdown */}
               {nt?.rmr && (
                 <div className="card" style={{ padding: '16px 20px' }}>
-                  <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Your Metabolism Breakdown</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center', marginBottom: 12 }}>
-                    <div>
-                      <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.rmr.toLocaleString()}</div>
-                      <div className="dim text-sm">RMR</div>
-                    </div>
+                  <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Your Daily Budget</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: nt.workout_calories > 0 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: 8, textAlign: 'center', marginBottom: 12 }}>
                     <div>
                       <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.rmr_adapted.toLocaleString()}</div>
-                      <div className="dim text-sm">Adapted (-10%)</div>
+                      <div className="dim text-sm">{nt.is_cutting ? 'Adapted RMR' : 'RMR'}</div>
                     </div>
+                    {nt.workout_calories > 0 && (
+                      <div>
+                        <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>+{nt.workout_calories.toLocaleString()}</div>
+                        <div className="dim text-sm">Workout</div>
+                      </div>
+                    )}
                     <div>
-                      <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{nt.tdee.toLocaleString()}</div>
-                      <div className="dim text-sm">TDEE</div>
-                    </div>
-                    <div>
-                      <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#00F19F' }}>{targetCals.toLocaleString()}</div>
-                      <div className="dim text-sm">Target</div>
+                      <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#00F19F' }}>{nt.daily_budget.toLocaleString()}</div>
+                      <div className="dim text-sm">Budget</div>
                     </div>
                   </div>
-                  {nt.daily_deficit > 0 && (
-                    <div style={{ fontSize: 13, color: '#999', textAlign: 'center' }}>
-                      Daily deficit: {nt.daily_deficit} cal ({nt.weekly_loss_rate} lbs/week)
-                      {nt.weeks_to_goal && (
-                        <span> — goal in ~{Math.round(nt.weeks_to_goal)} weeks ({new Date(Date.now() + nt.weeks_to_goal * 7 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})</span>
-                      )}
-                    </div>
+                  {nt.workout_calories === 0 && (
+                    <div style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>Workout calories update after Whoop syncs</div>
                   )}
-                  {!nt.is_safe && nt.warning && (
-                    <div style={{ fontSize: 13, color: '#FF4D4D', textAlign: 'center', marginTop: 8, padding: '6px 12px', background: '#FF4D4D15', borderRadius: 8 }}>{nt.warning}</div>
+                  {nt.is_cutting && (
+                    <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 4 }}>RMR adapted -10% for active cut ({nt.rmr.toLocaleString()} base)</div>
                   )}
                 </div>
               )}
@@ -1602,8 +1594,6 @@
         const hCm = heightIn * 2.54;
         estimatedRmr = Math.round((10 * wKg) + (6.25 * hCm) - (5 * ageVal) + (sexVal === 'male' ? 5 : -161));
       }
-      const rmrUsed = parseInt(form.rmr_override) || estimatedRmr;
-      const autoCalories = rmrUsed ? Math.round(rmrUsed * 0.9 * 1.55) : (weight ? Math.round(weight * 13) : null);
       const autoProtein = weight ? Math.max(Math.round(weight * 1.0), 150) : null;
 
       return (
@@ -1638,11 +1628,10 @@
 
           <h3 style={{ fontSize: 13, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Nutrition Targets</h3>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-            {autoCalories ? `TDEE ~${autoCalories.toLocaleString()} cal/day. ` : ''}
-            Leave blank to auto-calculate from your RMR.
+            Your daily budget = RMR + workout calories. Leave blank to auto-calculate.
           </div>
           <div className="form-grid-2" style={{ marginBottom: 20 }}>
-            <div className="field"><label>Daily Calorie Target</label><input type="number" placeholder={autoCalories ? `Auto: ${autoCalories}` : '2500'} {...f('goal_calorie_target')} /></div>
+            <div className="field"><label>Daily Calorie Override</label><input type="number" placeholder="Leave blank for auto" {...f('goal_calorie_target')} /></div>
             <div className="field"><label>Daily Protein Target (g)</label><input type="number" placeholder={autoProtein ? `Auto: ${autoProtein}` : '180'} {...f('goal_protein_target_grams')} /></div>
           </div>
 

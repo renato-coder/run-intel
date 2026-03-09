@@ -92,6 +92,39 @@ def _fetch_and_cache_recovery(session):
     return defaults, None
 
 
+def _fetch_today_workout_calories():
+    """Sum kilojoules from all Whoop workouts today, return kcal."""
+    import logging
+
+    from whoop import WhoopClient
+
+    logger = logging.getLogger(__name__)
+    today = datetime.now(timezone.utc).date()
+
+    try:
+        client = WhoopClient()
+        yesterday_start = (
+            datetime.now(timezone.utc)
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            - timedelta(days=1)
+        ).isoformat()
+        workouts = client.get_workouts(start=yesterday_start)
+        total_kj = 0
+        for w in workouts:
+            w_start = w.get("start")
+            if w_start:
+                w_date = datetime.fromisoformat(w_start.replace("Z", "+00:00")).date()
+                if w_date != today:
+                    continue
+            score = w.get("score", {})
+            kj = score.get("kilojoule") or 0
+            total_kj += kj
+        return round(total_kj / 4.184) if total_kj else 0
+    except Exception:
+        logger.exception("Error fetching workout calories from Whoop")
+        return 0
+
+
 @bp.route("/api/briefing", methods=["GET"])
 def get_briefing():
     """Return the enhanced morning briefing with structured JSON.
@@ -142,6 +175,15 @@ def get_briefing():
         )
         yesterday_cals = sum(n.calories for n in yesterday_nutrition) if yesterday_nutrition else None
         yesterday_protein = sum(n.protein_grams for n in yesterday_nutrition) if yesterday_nutrition else None
+
+        # Today's nutrition
+        today_nutrition = (
+            session.query(NutritionLog)
+            .filter(NutritionLog.date == today)
+            .all()
+        )
+        today_cals = sum(n.calories for n in today_nutrition) if today_nutrition else 0
+        today_protein = sum(n.protein_grams for n in today_nutrition) if today_nutrition else 0
 
         # Latest body comp
         latest_bc = (
@@ -206,9 +248,8 @@ def get_briefing():
             progress["ef_change_30d_pct"] = round((metrics.ef_30d - metrics.ef_90d) / metrics.ef_90d * 100, 1)
         result["pace_progress"] = progress
 
-    # Add nutrition target — RMR-based (Mifflin-St Jeor) or custom override
+    # Add nutrition target — workout-based daily budget
     result["nutrition_target"] = None
-    # Weight priority: latest body comp → profile weight
     current_weight = bc_data["weight_lbs"] if bc_data else profile_data.get("weight_lbs")
     if current_weight:
         current_weight = float(current_weight)
@@ -216,82 +257,59 @@ def get_briefing():
         age = profile_data.get("age")
         sex = profile_data.get("sex")
 
-        # Determine training day type
-        if rx.type in ("tempo", "intervals", "long"):
-            day_type = "hard"
-        elif rx.type == "rest":
-            day_type = "rest"
-        else:
-            day_type = "easy"
-
         custom_cals = profile_data.get("goal_calorie_target")
         custom_protein = profile_data.get("goal_protein_target_grams")
 
-        # If we have enough data for RMR-based calculation
-        if height and age and sex:
-            goal_date = profile_data.get("goal_target_date")
-            if isinstance(goal_date, str):
-                from datetime import date as date_cls
-                try:
-                    goal_date = date_cls.fromisoformat(goal_date)
-                except ValueError:
-                    goal_date = None
+        # Fetch today's workout calories from Whoop
+        workout_calories = _fetch_today_workout_calories()
 
+        if height and age and sex:
             plan = compute_nutrition_plan(
                 weight_lbs=current_weight,
                 height_inches=height,
                 age=age,
                 sex=sex,
                 goal_weight_lbs=float(profile_data["goal_weight_lbs"]) if profile_data.get("goal_weight_lbs") else None,
-                goal_target_date=goal_date,
+                workout_calories=workout_calories,
                 rmr_override=profile_data.get("rmr_override"),
             )
 
-            # Training-day adjustment: hard days get smaller deficit, rest days get larger
-            if day_type == "hard":
-                adjusted_cals = plan.tdee  # maintenance on hard days
-            elif day_type == "rest":
-                adjusted_cals = max(1200, plan.calorie_target - 100)
-            else:
-                adjusted_cals = plan.calorie_target
-
-            # Custom targets override auto-calculated
+            # Custom calorie target overrides the auto budget
             if custom_cals or custom_protein:
-                target_cals = custom_cals or adjusted_cals
+                target_cals = custom_cals or plan.daily_budget
                 target_protein = custom_protein or plan.protein_target_grams
                 target_source = "custom"
             else:
-                target_cals = adjusted_cals
+                target_cals = plan.daily_budget
                 target_protein = plan.protein_target_grams
                 target_source = "auto"
+
+            net = target_cals - today_cals
 
             result["nutrition_target"] = {
                 "calories": target_cals,
                 "protein_grams": target_protein,
-                "day_type": day_type,
                 "target_source": target_source,
                 "rmr": plan.rmr,
                 "rmr_adapted": plan.rmr_adapted,
-                "tdee": plan.tdee,
-                "daily_deficit": plan.daily_deficit,
-                "weekly_loss_rate": plan.weekly_loss_rate,
-                "weeks_to_goal": plan.weeks_to_goal,
-                "is_safe": plan.is_safe,
+                "workout_calories": plan.workout_calories,
+                "daily_budget": plan.daily_budget,
+                "is_cutting": plan.is_cutting,
                 "warning": plan.warning,
+                "today": {
+                    "calories": today_cals,
+                    "protein_grams": today_protein,
+                },
+                "net": net,
                 "yesterday": {
                     "calories": yesterday_cals,
                     "protein_grams": yesterday_protein,
                 } if yesterday_cals is not None else None,
             }
         else:
-            # Fallback: old formula when profile is incomplete
+            # Fallback when profile is incomplete — use weight-based estimate
             auto_protein = max(int(current_weight * 0.9), 150)
-            if day_type == "hard":
-                auto_cals = int(current_weight * 15)
-            elif day_type == "rest":
-                auto_cals = int(current_weight * 11)
-            else:
-                auto_cals = int(current_weight * 13)
+            auto_cals = int(current_weight * 13) + workout_calories
 
             if custom_cals or custom_protein:
                 target_cals = custom_cals or auto_cals
@@ -302,19 +320,23 @@ def get_briefing():
                 target_protein = auto_protein
                 target_source = "auto"
 
+            net = target_cals - today_cals
+
             result["nutrition_target"] = {
                 "calories": target_cals,
                 "protein_grams": target_protein,
-                "day_type": day_type,
                 "target_source": target_source,
                 "rmr": None,
                 "rmr_adapted": None,
-                "tdee": None,
-                "daily_deficit": None,
-                "weekly_loss_rate": None,
-                "weeks_to_goal": None,
-                "is_safe": True,
+                "workout_calories": workout_calories,
+                "daily_budget": target_cals,
+                "is_cutting": False,
                 "warning": "Set height, age, and sex in Settings for RMR-based targets.",
+                "today": {
+                    "calories": today_cals,
+                    "protein_grams": today_protein,
+                },
+                "net": net,
                 "yesterday": {
                     "calories": yesterday_cals,
                     "protein_grams": yesterday_protein,

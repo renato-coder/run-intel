@@ -336,15 +336,12 @@ def compute_biological_age(
 
 @dataclass
 class NutritionPlan:
-    rmr: int                    # Mifflin-St Jeor RMR (kcal/day)
-    rmr_adapted: int            # RMR * 0.90 (metabolic adaptation during cut)
-    tdee: int                   # Adapted RMR * activity multiplier
-    daily_deficit: int          # Based on weight gap / weeks remaining
-    calorie_target: int         # TDEE - deficit (floored at 1200)
+    rmr: int                    # Mifflin-St Jeor RMR or user override (kcal/day)
+    rmr_adapted: int            # RMR × 0.90 if cutting, else RMR
+    workout_calories: int       # From Whoop kilojoules today (0 on rest days)
+    daily_budget: int           # rmr_adapted + workout_calories
     protein_target_grams: int   # 1g per lb of current weight
-    weekly_loss_rate: float     # lbs/week (capped at 1.0 for athletes)
-    weeks_to_goal: float | None
-    is_safe: bool
+    is_cutting: bool            # True if goal_weight < current_weight
     warning: str | None
 
 
@@ -363,65 +360,30 @@ def compute_nutrition_plan(
     age: int,
     sex: str,
     goal_weight_lbs: float | None = None,
-    goal_target_date: date | None = None,
-    activity_multiplier: float = 1.55,
+    workout_calories: int = 0,
     rmr_override: int | None = None,
 ) -> NutritionPlan:
-    """Full nutrition target calculation for a weight-loss phase.
+    """Workout-based daily budget: Adapted RMR + actual workout burn.
 
     Uses rmr_override if provided, otherwise Mifflin-St Jeor.
-    RMR → 10% metabolic adaptation → TDEE → deficit.
-    Deficit derived from weight gap and timeline, capped for athlete safety.
+    Metabolic adaptation (×0.90) only applied during active cut.
     """
     rmr = rmr_override if rmr_override else compute_rmr(weight_lbs, height_inches, age, sex)
-    rmr_adapted = round(rmr * 0.90)
-    tdee = round(rmr_adapted * activity_multiplier)
 
-    today = date.today()
-    weeks_to_goal = None
-    warning = None
+    is_cutting = bool(goal_weight_lbs and weight_lbs > goal_weight_lbs)
+    rmr_adapted = round(rmr * 0.90) if is_cutting else rmr
 
-    if (goal_weight_lbs and goal_target_date and goal_target_date > today
-            and weight_lbs > goal_weight_lbs):
-        weight_to_lose = weight_lbs - goal_weight_lbs
-        weeks_remaining = max((goal_target_date - today).days / 7, 1)
-        weekly_rate = weight_to_lose / weeks_remaining
-        weekly_rate = min(weekly_rate, 1.0)  # cap at 1 lb/week for athletes
-        daily_deficit = round(weekly_rate * 3500 / 7)
-        weeks_to_goal = round(weight_to_lose / weekly_rate, 1) if weekly_rate > 0 else None
-    else:
-        # Default: gentle 0.75 lb/week deficit
-        weekly_rate = 0.75 if (goal_weight_lbs and weight_lbs > goal_weight_lbs) else 0
-        daily_deficit = round(weekly_rate * 3500 / 7)
-
-    # Safety bounds
-    is_safe = True
-    if daily_deficit > 1000:
-        daily_deficit = 1000
-        weekly_rate = 1000 * 7 / 3500
-        warning = "Timeline requires aggressive deficit. Capped at 1,000 cal/day for safety."
-        is_safe = False
-
-    calorie_target = tdee - daily_deficit
-    if calorie_target < 1200:
-        calorie_target = 1200
-        daily_deficit = tdee - 1200
-        warning = "Calorie target floored at 1,200. Consider extending your timeline."
-        is_safe = False
-
+    daily_budget = rmr_adapted + workout_calories
     protein = max(round(weight_lbs * 1.0), 150)
 
     return NutritionPlan(
         rmr=rmr,
         rmr_adapted=rmr_adapted,
-        tdee=tdee,
-        daily_deficit=daily_deficit,
-        calorie_target=calorie_target,
+        workout_calories=workout_calories,
+        daily_budget=daily_budget,
         protein_target_grams=protein,
-        weekly_loss_rate=round(weekly_rate, 2),
-        weeks_to_goal=weeks_to_goal,
-        is_safe=is_safe,
-        warning=warning,
+        is_cutting=is_cutting,
+        warning=None,
     )
 
 
