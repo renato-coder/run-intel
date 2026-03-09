@@ -196,6 +196,9 @@ def _run_migrations(eng):
            WHERE date = '2026-03-08' AND distance_miles = 12.0 AND time_minutes = 140.0""",
         # Fix nutrition entries logged 2026-03-08 MST but stored as 03-09 (UTC date)
         "UPDATE nutrition_log SET date = '2026-03-08' WHERE date = '2026-03-09' AND created_at < '2026-03-09T07:00:00'",
+        # Delete duplicate run on 2026-03-09 (keep the one with the lowest id)
+        """DELETE FROM runs WHERE date = '2026-03-09'
+           AND id NOT IN (SELECT MIN(id) FROM runs WHERE date = '2026-03-09')""",
     ]
     with eng.begin() as conn:
         for sql in columns:
