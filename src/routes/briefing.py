@@ -92,6 +92,52 @@ def _fetch_and_cache_recovery(session):
     return defaults, None
 
 
+def _sync_withings_weights(session, today):
+    """Pull last 30 days of Withings weight data and upsert into BodyComp."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        from config import WITHINGS_CLIENT_ID
+        if not WITHINGS_CLIENT_ID:
+            return
+
+        from withings import WithingsClient
+        client = WithingsClient()
+        if not client.has_tokens():
+            return
+
+        start = today - timedelta(days=30)
+        measurements = client.get_weight_measurements(start, today)
+
+        for m in measurements:
+            meas_date = m["date"]
+            weight_kg = m["weight_kg"]
+            weight_lbs = round(weight_kg * 2.20462, 1)
+            body_fat_pct = m.get("body_fat_pct")
+
+            existing = (
+                session.query(BodyComp)
+                .filter(BodyComp.date == meas_date, BodyComp.source == "withings")
+                .first()
+            )
+            if existing:
+                existing.weight_lbs = weight_lbs
+                if body_fat_pct is not None:
+                    existing.body_fat_pct = body_fat_pct
+            else:
+                session.add(BodyComp(
+                    date=meas_date,
+                    weight_lbs=weight_lbs,
+                    body_fat_pct=body_fat_pct,
+                    source="withings",
+                ))
+        session.flush()
+    except Exception:
+        logger.exception("Error syncing Withings weights")
+
+
 def _fetch_today_workout_calories():
     """Sum kilojoules from all Whoop workouts today, return kcal."""
     import logging
@@ -216,6 +262,26 @@ def get_briefing():
             .first()
         )
         week_ago_weight = float(week_ago_bc.weight_lbs) if week_ago_bc else None
+
+        # Sync Withings weights (upserts last 30 days into BodyComp)
+        _sync_withings_weights(session, today)
+
+        # Weight trend for chart (last 30 days, all sources)
+        weight_rows = (
+            session.query(BodyComp)
+            .filter(BodyComp.date >= cutoff_30d, BodyComp.date <= today)
+            .order_by(BodyComp.date)
+            .all()
+        )
+        weight_trend = [
+            {
+                "date": bc.date.isoformat(),
+                "weight_lbs": float(bc.weight_lbs),
+                "body_fat_pct": float(bc.body_fat_pct) if bc.body_fat_pct else None,
+                "source": bc.source or "manual",
+            }
+            for bc in weight_rows
+        ]
 
     # Generate base briefing (existing logic)
     result = generate_briefing(today_recovery, recovery_history, run_history)
@@ -368,6 +434,9 @@ def get_briefing():
                 bc["target_body_fat_pct"] = target_bf
                 bc["weeks_to_goal"] = weeks
         result["body_comp"] = bc
+
+    # Add weight trend
+    result["weight_trend"] = weight_trend if weight_trend else None
 
     # Add longevity
     result["longevity"] = None

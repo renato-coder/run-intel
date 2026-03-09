@@ -59,8 +59,8 @@ def set_security_headers(response):
 @app.before_request
 def check_auth():
     """Enforce auth on all routes except login/logout and static assets."""
-    # Skip auth for login/logout
-    if request.path in ("/login", "/logout"):
+    # Skip auth for login/logout and OAuth callbacks
+    if request.path in ("/login", "/logout", "/api/withings/callback"):
         return None
     # Skip auth for static assets served directly
     if request.path.startswith("/static/"):

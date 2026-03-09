@@ -34,6 +34,11 @@ WHOOP_CLIENT_ID = _require_env("WHOOP_CLIENT_ID")
 WHOOP_CLIENT_SECRET = _require_env("WHOOP_CLIENT_SECRET")
 WHOOP_REDIRECT_URI = _require_env("WHOOP_REDIRECT_URI")
 
+# ── Withings API (optional) ───────────────────────────────────
+WITHINGS_CLIENT_ID = os.environ.get("WITHINGS_CLIENT_ID")
+WITHINGS_CLIENT_SECRET = os.environ.get("WITHINGS_CLIENT_SECRET")
+WITHINGS_REDIRECT_URI = os.environ.get("WITHINGS_REDIRECT_URI", "")
+
 # ── App ───────────────────────────────────────────────────────────
 APP_PASSWORD = _require_env("APP_PASSWORD")
 SESSION_SECRET = _require_env("SESSION_SECRET")

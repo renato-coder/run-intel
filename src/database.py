@@ -85,6 +85,7 @@ class Token(Base):
     access_token = Column(Text, nullable=False)
     refresh_token = Column(Text, nullable=False)
     expiry = Column(Float, nullable=False)
+    provider = Column(String(20), server_default="whoop")
 
 
 class UserProfile(Base):
@@ -150,6 +151,7 @@ class BodyComp(_SerializableMixin, Base):
     weight_lbs = Column(Numeric(5, 1), nullable=False)
     body_fat_pct = Column(Numeric(4, 1))
     notes = Column(Text)
+    source = Column(String(20), server_default="manual")
     photo = deferred(Column(LargeBinary))
     created_at = Column(DateTime, server_default=sa_func.now())
 
@@ -176,6 +178,8 @@ def _run_migrations(eng):
         "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS sex VARCHAR(10)",
         "ALTER TABLE body_comp ADD COLUMN IF NOT EXISTS photo BYTEA",
         "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS rmr_override INTEGER",
+        "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS provider VARCHAR(20) DEFAULT 'whoop'",
+        "ALTER TABLE body_comp ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual'",
     ]
     constraints = [
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_cal_target CHECK (goal_calorie_target >= 800 AND goal_calorie_target <= 10000)",

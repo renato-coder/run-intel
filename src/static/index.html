@@ -1042,6 +1042,19 @@
             </div>
           )}
 
+          {briefing?.weight_trend && briefing.weight_trend.length >= 2 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><h2 className="green">WEIGHT TREND</h2></div>
+              <BioTrendChart
+                data={briefing.weight_trend.map(w => ({ date: w.date, value: w.weight_lbs }))}
+                label="Weight"
+                color="#00BFFF"
+                unit=" lbs"
+                lowerIsBetter={true}
+              />
+            </div>
+          )}
+
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-header"><h2>RECENT ENTRIES</h2></div>
             {logs.slice(0, 14).map(l => (
@@ -1536,6 +1549,11 @@
       });
       const [saving, setSaving] = useState(false);
       const [saved, setSaved] = useState(false);
+      const [withingsStatus, setWithingsStatus] = useState(null);
+
+      useEffect(() => {
+        api('/api/withings/status').then(setWithingsStatus).catch(() => {});
+      }, []);
 
       useEffect(() => {
         if (profile) {
@@ -1639,6 +1657,25 @@
           <button className="btn" onClick={save} disabled={saving} style={{ width: '100%' }}>
             {saving ? <span className="spinner"></span> : saved ? 'Saved!' : 'Save Profile'}
           </button>
+
+          {withingsStatus?.configured && (
+            <div style={{ marginTop: 20, padding: '16px 20px', background: '#111', borderRadius: 8, border: '1px solid #1E1E1E' }}>
+              <div style={{ fontSize: 11, color: '#00BFFF', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Withings Smart Scale</div>
+              {withingsStatus.connected ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#00F19F', fontSize: 18 }}>&#10003;</span>
+                  <span style={{ color: '#CCC', fontSize: 14 }}>Connected — weight syncs automatically</span>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>Connect your Withings scale to auto-sync weight data.</div>
+                  <button className="btn btn-sm" onClick={() => { window.location.href = '/api/withings/auth'; }} style={{ background: '#00BFFF', color: '#000' }}>
+                    Connect Withings
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }

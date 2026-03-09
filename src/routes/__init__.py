@@ -6,6 +6,7 @@ from routes.metrics import bp as metrics_bp
 from routes.nutrition import bp as nutrition_bp
 from routes.profile import bp as profile_bp
 from routes.runs import bp as runs_bp
+from routes.withings import bp as withings_bp
 
 
 def register_blueprints(app):
@@ -16,3 +17,4 @@ def register_blueprints(app):
     app.register_blueprint(nutrition_bp)
     app.register_blueprint(body_comp_bp)
     app.register_blueprint(metrics_bp)
+    app.register_blueprint(withings_bp)
