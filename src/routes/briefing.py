@@ -359,6 +359,56 @@ def get_recovery_today():
     return jsonify({"date": recovery_date or datetime.now(timezone.utc).date().isoformat(), **recovery})
 
 
+@bp.route("/api/debug/whoop-recovery", methods=["GET"])
+def debug_whoop_recovery():
+    """Temporary debug endpoint: show raw Whoop recovery API response."""
+    from whoop import WhoopClient
+
+    today = datetime.now(timezone.utc).date()
+    yesterday_start = (
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        - timedelta(days=1)
+    ).isoformat()
+    today_start = (
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+    ).isoformat()
+
+    try:
+        client = WhoopClient()
+        recs_yesterday = client.get_recovery(start=yesterday_start)
+        recs_today = client.get_recovery(start=today_start)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+    # Show top-level keys of each record (not full nested data)
+    def summarize(rec):
+        score = rec.get("score", {})
+        return {
+            "top_keys": list(rec.keys()),
+            "cycle_id": rec.get("cycle_id"),
+            "sleep_id": rec.get("sleep_id"),
+            "created_at": rec.get("created_at"),
+            "updated_at": rec.get("updated_at"),
+            "score_state": rec.get("score_state"),
+            "recovery_score": score.get("recovery_score"),
+            "hrv": score.get("hrv_rmssd_milli"),
+            "resting_hr": score.get("resting_heart_rate"),
+        }
+
+    return jsonify({
+        "utc_now": datetime.now(timezone.utc).isoformat(),
+        "today": today.isoformat(),
+        "query_yesterday_start": yesterday_start,
+        "query_today_start": today_start,
+        "recs_from_yesterday_count": len(recs_yesterday),
+        "recs_from_yesterday": [summarize(r) for r in recs_yesterday],
+        "recs_from_today_count": len(recs_today),
+        "recs_from_today": [summarize(r) for r in recs_today],
+    })
+
+
 @bp.route("/api/snapshot", methods=["GET"])
 def get_snapshot():
     """Return last 7d vs last 30d averages using SQL aggregates."""
