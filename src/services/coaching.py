@@ -149,6 +149,180 @@ def compute_zone2_minutes(zone_data: dict) -> int:
     return round(total_ms / 60000)
 
 
+def vdot_paces(vdot: float) -> dict:
+    """Return pace targets (seconds/mile) for all workout types from VDOT."""
+    if not vdot or vdot <= 0:
+        return {"easy": 540, "marathon": 510, "tempo": 450, "interval": 420, "repetition": 390}
+    easy = max(420, 660 - (vdot - 30) * 6)
+    marathon = max(380, 600 - (vdot - 30) * 5.5)
+    tempo = max(350, 540 - (vdot - 30) * 5)
+    interval = max(310, 490 - (vdot - 30) * 4.5)
+    repetition = max(280, 450 - (vdot - 30) * 4)
+    return {"easy": easy, "marathon": marathon, "tempo": tempo, "interval": interval, "repetition": repetition}
+
+
+def compute_hr_zones(max_hr: int) -> dict:
+    """Return HR zone boundaries from max HR."""
+    if not max_hr:
+        return {}
+    return {
+        "recovery": int(max_hr * 0.65),
+        "easy_cap": int(max_hr * 0.76),
+        "marathon_low": int(max_hr * 0.80),
+        "marathon_high": int(max_hr * 0.85),
+        "tempo": int(max_hr * 0.88),
+        "interval_low": int(max_hr * 0.93),
+        "interval_high": int(max_hr * 0.98),
+    }
+
+
+# ── Weekly Scorecard ─────────────────────────────────────────────
+
+
+@dataclass
+class GoalProgress:
+    label: str       # "Weight", "Marathon", "Body Fat"
+    current: str     # "194.4 lbs"
+    target: str      # "185 lbs"
+    trend: str       # "↓ 1.6/wk"
+    status: str      # "on_track" | "building" | "stalling" | "off_track"
+
+
+@dataclass
+class WeeklyScorecard:
+    week_ending: str
+    goals: list
+    nutrition_compliance: dict
+    zone2_minutes: int
+    zone2_target: int
+    avg_recovery: float | None
+    weekly_miles: float
+    headline: str
+
+
+def compute_weekly_scorecard(
+    current_weight: float | None,
+    goal_weight: float | None,
+    weight_7d_ago: float | None,
+    vdot: float | None,
+    goal_marathon_min: float | None,
+    ef_trend: str | None,
+    current_bf: float | None,
+    goal_bf: float | None,
+    bf_30d_ago: float | None,
+    nutrition_days: int,
+    nutrition_hit_cal: int,
+    nutrition_hit_protein: int,
+    zone2_minutes: int,
+    avg_recovery: float | None,
+    weekly_miles: float,
+    week_ending: str,
+) -> WeeklyScorecard:
+    """Compute the weekly scorecard from aggregated data."""
+    goals = []
+
+    # Weight goal
+    if current_weight and goal_weight:
+        weekly_change = round(current_weight - weight_7d_ago, 1) if weight_7d_ago else None
+        remaining = round(current_weight - goal_weight, 1)
+
+        if weekly_change is not None and weekly_change < 0:
+            rate = abs(weekly_change)
+            if 0.5 <= rate <= 2.0:
+                status = "on_track"
+            elif rate > 2.0:
+                status = "on_track"  # losing fast but still progress
+            else:
+                status = "building"  # slow but moving
+            trend = f"↓ {rate}/wk"
+        elif weekly_change is not None and weekly_change > 0.5:
+            status = "off_track"
+            trend = f"↑ {weekly_change}/wk"
+        else:
+            status = "building" if remaining > 0 else "on_track"
+            trend = "→ flat"
+
+        goals.append(GoalProgress(
+            label="Weight",
+            current=f"{current_weight} lbs",
+            target=f"{goal_weight} lbs",
+            trend=trend,
+            status=status,
+        ))
+
+    # Marathon goal
+    if vdot and goal_marathon_min:
+        marathon_est = vdot_to_marathon_time(vdot)
+        hours = int(goal_marathon_min // 60)
+        mins = int(goal_marathon_min % 60)
+        goal_str = f"{hours}:{mins:02d}"
+
+        if ef_trend == "improving":
+            status = "on_track"
+            trend = "EF ↑ improving"
+        elif ef_trend == "plateau":
+            status = "building"
+            trend = "EF → plateau"
+        else:
+            status = "stalling"
+            trend = "EF ↓ declining"
+
+        goals.append(GoalProgress(
+            label="Marathon",
+            current=f"~{marathon_est}",
+            target=f"sub-{goal_str}",
+            trend=trend,
+            status=status,
+        ))
+
+    # Body fat goal
+    if current_bf and goal_bf:
+        if bf_30d_ago and current_bf < bf_30d_ago:
+            status = "on_track"
+            trend = f"↓ {round(bf_30d_ago - current_bf, 1)}% in 30d"
+        elif bf_30d_ago and current_bf >= bf_30d_ago:
+            status = "off_track"
+            trend = "→ no change"
+        else:
+            status = "building"
+            trend = "Need more data"
+
+        goals.append(GoalProgress(
+            label="Body Fat",
+            current=f"{current_bf}%",
+            target=f"{goal_bf}%",
+            trend=trend,
+            status=status,
+        ))
+
+    # Nutrition compliance
+    cal_pct = round(nutrition_hit_cal / nutrition_days * 100) if nutrition_days > 0 else 0
+    protein_pct = round(nutrition_hit_protein / nutrition_days * 100) if nutrition_days > 0 else 0
+
+    # Headline
+    on_track_count = sum(1 for g in goals if g.status in ("on_track", "building"))
+    total = len(goals) if goals else 1
+    if on_track_count == total and total > 0:
+        headline = "Strong week — on track across all goals."
+    elif on_track_count >= total * 0.5:
+        headline = "Solid progress — most goals moving in the right direction."
+    elif goals:
+        headline = "Needs attention — check the areas falling behind."
+    else:
+        headline = "Set your goals in Settings to track progress."
+
+    return WeeklyScorecard(
+        week_ending=week_ending,
+        goals=[{"label": g.label, "current": g.current, "target": g.target, "trend": g.trend, "status": g.status} for g in goals],
+        nutrition_compliance={"calories_pct": cal_pct, "protein_pct": protein_pct},
+        zone2_minutes=zone2_minutes,
+        zone2_target=150,
+        avg_recovery=avg_recovery,
+        weekly_miles=round(weekly_miles, 1),
+        headline=headline,
+    )
+
+
 def prescribe_workout(recovery_score: float | None,
                       tsb: float | None,
                       acwr: float | None,

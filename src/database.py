@@ -140,6 +140,17 @@ class NutritionLog(_SerializableMixin, Base):
     created_at = Column(DateTime, server_default=sa_func.now())
 
 
+class WeeklyPlanModel(_SerializableMixin, Base):
+    __tablename__ = "weekly_plan"
+    __table_args__ = (Index("ix_weekly_plan_week_start", "week_start", unique=True),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    week_start = Column(Date, nullable=False, unique=True)
+    plan_json = Column(Text, nullable=False)
+    metrics_snapshot = Column(Text)
+    created_at = Column(DateTime, server_default=sa_func.now())
+
+
 class BodyComp(_SerializableMixin, Base):
     __tablename__ = "body_comp"
     __table_args__ = (Index("ix_body_comp_date", "date"),)
@@ -180,6 +191,14 @@ def _run_migrations(eng):
         "ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS rmr_override INTEGER",
         "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS provider VARCHAR(20) DEFAULT 'whoop'",
         "ALTER TABLE body_comp ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual'",
+        # Weekly plan table (create if not exists handled by create_all, this is a safety net)
+        """CREATE TABLE IF NOT EXISTS weekly_plan (
+            id SERIAL PRIMARY KEY,
+            week_start DATE NOT NULL UNIQUE,
+            plan_json TEXT NOT NULL,
+            metrics_snapshot TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )""",
     ]
     constraints = [
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_cal_target CHECK (goal_calorie_target >= 800 AND goal_calorie_target <= 10000)",
