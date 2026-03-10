@@ -635,7 +635,7 @@
       );
     }
 
-    function WeekOverviewStrip({ plan, runs, workouts }) {
+    function WeekOverviewStrip({ plan, runs, workouts, onRegenerate }) {
       if (!plan || !plan.days) return null;
       const todayStr = getLocalDateString();
       const runDates = new Set((runs || []).map(r => r.date));
@@ -671,7 +671,10 @@
               );
             })}
           </div>
-          <div style={{ fontSize: 11, color: '#555', textAlign: 'center', marginTop: 8 }}>{plan.generation_context}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#555' }}>{plan.generation_context}</div>
+            {onRegenerate && <button className="btn-sm btn-outline" onClick={onRegenerate} style={{ fontSize: 10, padding: '2px 8px' }}>Regenerate</button>}
+          </div>
         </div>
       );
     }
@@ -2008,7 +2011,10 @@
             <>
               <WeeklyScorecardCard scorecard={weeklyScorecard} />
               <TodayWorkoutCard plan={weeklyPlan} recovery={recovery} />
-              <WeekOverviewStrip plan={weeklyPlan} runs={runs} workouts={whWorkouts} />
+              <WeekOverviewStrip plan={weeklyPlan} runs={runs} workouts={whWorkouts} onRegenerate={() => {
+                const ld = getLocalDateString();
+                api(`/api/weekly-plan/regenerate?local_date=${ld}`, { method: 'POST' }).then(r => { if (!r.error) setWeeklyPlan(r); }).catch(() => {});
+              }} />
               <MorningBriefing briefing={briefing} />
               <LogRunCard onLogged={loadAll} />
               <div className="two-col">
