@@ -1027,6 +1027,7 @@
       const [calories, setCalories] = useState('');
       const [protein, setProtein] = useState('');
       const [notes, setNotes] = useState('');
+      const [logDate, setLogDate] = useState(getLocalDateString());
       const [loading, setLoading] = useState(false);
       const [weeklySummary, setWeeklySummary] = useState(null);
 
@@ -1072,7 +1073,7 @@
           await api('/api/nutrition', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined, date: getLocalDateString() }),
+            body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined, date: logDate }),
           });
           setCalories(''); setProtein(''); setNotes('');
           loadData();
@@ -1096,7 +1097,7 @@
           )}
           <div className="card">
             <div className="card-header"><h2 className="green">LOG NUTRITION</h2></div>
-            <div className="form-grid-3" style={{ marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
               <div className="field">
                 <label>Calories</label>
                 <input type="number" placeholder="2500" value={calories} onChange={e => setCalories(e.target.value)} />
@@ -1104,6 +1105,10 @@
               <div className="field">
                 <label>Protein (g)</label>
                 <input type="number" placeholder="180" value={protein} onChange={e => setProtein(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Date</label>
+                <input type="date" value={logDate} onChange={e => setLogDate(e.target.value)} max={getLocalDateString()} />
               </div>
               <div className="field">
                 <label>Notes</label>
@@ -1959,6 +1964,14 @@
               )}
             </div>
           )}
+
+          <div style={{ marginTop: 20, padding: '16px 20px', background: '#111', borderRadius: 8, border: '1px solid #1E1E1E' }}>
+            <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Whoop</div>
+            <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>Connect or re-authorize Whoop for workout sync, heart rate zones, and recovery data.</div>
+            <button className="btn btn-sm" onClick={() => { window.location.href = '/api/whoop/auth'; }} style={{ background: '#00F19F', color: '#000' }}>
+              Connect Whoop
+            </button>
+          </div>
         </div>
       );
     }

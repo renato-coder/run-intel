@@ -60,7 +60,7 @@ def set_security_headers(response):
 def check_auth():
     """Enforce auth on all routes except login/logout and static assets."""
     # Skip auth for login/logout and OAuth callbacks
-    if request.path in ("/login", "/logout", "/api/withings/callback"):
+    if request.path in ("/login", "/logout", "/api/withings/callback", "/api/whoop/callback"):
         return None
     # Skip auth for static assets served directly
     if request.path.startswith("/static/"):

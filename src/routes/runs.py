@@ -283,3 +283,29 @@ def get_trends():
                     "avg_hr": r.avg_hr,
                 })
     return jsonify(result)
+
+
+@bp.route("/api/whoop/auth")
+def whoop_auth():
+    """Redirect to Whoop authorization page for re-auth."""
+    from flask import redirect as flask_redirect
+    client = WhoopClient()
+    auth_url, _state = client.generate_auth_url()
+    return flask_redirect(auth_url)
+
+
+@bp.route("/api/whoop/callback")
+def whoop_callback():
+    """Handle Whoop OAuth callback."""
+    from flask import redirect as flask_redirect
+    code = request.args.get("code")
+    if not code:
+        # Whoop tests the callback URL with a plain GET
+        return "OK", 200
+    client = WhoopClient()
+    try:
+        client.exchange_code(code)
+        return flask_redirect("/?whoop=connected")
+    except Exception:
+        logger.exception("Whoop OAuth callback failed")
+        return jsonify({"error": "Failed to connect Whoop"}), 500
