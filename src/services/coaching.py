@@ -468,6 +468,73 @@ def compute_nutrition_plan(
     )
 
 
+def compute_weekly_deficit_target(
+    current_weight: float | None,
+    goal_weight: float | None,
+    goal_target_date: str | None,
+    today: str | None = None,
+) -> dict:
+    """Compute the weekly calorie deficit needed to reach goal weight by target date.
+
+    Returns a dict with weekly/daily targets, safety warnings, and goal context.
+    All weight in lbs. Dates as ISO strings.
+    """
+    from datetime import date as date_cls
+
+    today_d = date_cls.fromisoformat(today) if today else date_cls.today()
+
+    # Missing data checks
+    if not current_weight or not goal_weight:
+        return {"status": "missing_goal", "message": "Set a weight goal in Settings"}
+    if not goal_target_date:
+        return {"status": "missing_date", "message": "Set a target date in Settings"}
+
+    try:
+        target_d = date_cls.fromisoformat(goal_target_date)
+    except (ValueError, TypeError):
+        return {"status": "invalid_date", "message": "Invalid target date"}
+
+    lbs_to_lose = current_weight - goal_weight
+
+    if lbs_to_lose <= 0:
+        return {
+            "status": "goal_reached",
+            "message": "Goal reached!",
+            "lbs_to_lose": round(lbs_to_lose, 1),
+            "current_weight": round(current_weight, 1),
+            "goal_weight": round(goal_weight, 1),
+        }
+
+    days_remaining = (target_d - today_d).days
+    if days_remaining <= 0:
+        return {
+            "status": "past_date",
+            "message": "Target date has passed \u2014 update in Settings",
+            "lbs_to_lose": round(lbs_to_lose, 1),
+        }
+
+    weeks_remaining = days_remaining / 7
+    weekly_deficit = round(lbs_to_lose * 3500 / weeks_remaining)
+    daily_deficit = round(weekly_deficit / 7)
+
+    # Safety: cap at 7000 cal/week (2 lbs/week)
+    warning = None
+    if weekly_deficit > 7000:
+        warning = "This pace requires losing more than 2 lbs/week. Consider extending your target date."
+
+    return {
+        "status": "ok",
+        "weekly_deficit_needed": weekly_deficit,
+        "daily_deficit_needed": daily_deficit,
+        "lbs_to_lose": round(lbs_to_lose, 1),
+        "weeks_remaining": round(weeks_remaining, 1),
+        "current_weight": round(current_weight, 1),
+        "goal_weight": round(goal_weight, 1),
+        "lbs_per_week": round(lbs_to_lose / weeks_remaining, 2),
+        "warning": warning,
+    }
+
+
 # ── VDOT ↔ Marathon time ────────────────────────────────────────
 
 

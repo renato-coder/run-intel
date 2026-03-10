@@ -301,6 +301,7 @@ def _sync_whoop_workouts(monday: date, sunday: date):
             sport_id = w.get("sport_id")
             score = w.get("score", {})
             strain = score.get("strain")
+            kilojoule = score.get("kilojoule")
 
             # Compute duration from start/end
             duration_min = None
@@ -332,6 +333,7 @@ def _sync_whoop_workouts(monday: date, sunday: date):
                 sport_name=sport_name,
                 sport_id=sport_id,
                 strain=strain,
+                kilojoule=kilojoule,
                 duration_min=duration_min,
                 whoop_id=whoop_id,
             ))

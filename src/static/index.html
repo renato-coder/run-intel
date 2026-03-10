@@ -691,15 +691,15 @@
             {briefing.note && (
               <div style={{ fontSize: 12, color: '#FF8C00', marginBottom: 12 }}>{briefing.note}</div>
             )}
-            <div className="briefing-play">
-              <div className="briefing-play-label">Today's Workout</div>
-              <div className="briefing-play-text">
-                {w ? w.description : briefing.play}
+            {briefing.recovery_score != null && briefing.recovery_score < 50 && (
+              <div className="briefing-play">
+                <div className="briefing-play-label">Recovery Check</div>
+                <div className="briefing-play-text">
+                  Recovery is {briefing.recovery_score}% — consider dialing back intensity today.
+                  {w && w.rationale && ` ${w.rationale}`}
+                </div>
               </div>
-              {w && w.rationale && (
-                <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>{w.rationale}</div>
-              )}
-            </div>
+            )}
             {briefing.pace_progress && (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Marathon Fitness</div>
@@ -949,16 +949,91 @@
     }
 
     // ── Nutrition Tab ─────────────────────────────────────────────
+    function WeeklyDeficitChart({ summary }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!summary || !summary.days) return;
+        const daysWithData = summary.days.filter(d => d.has_data);
+        if (daysWithData.length === 0) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (chartRef.current) chartRef.current.destroy();
+        const allDays = summary.days;
+        const dailyTarget = summary.deficit_target?.daily_deficit_needed || 0;
+        chartRef.current = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: allDays.map(d => d.day_label.slice(0, 3)),
+            datasets: [{
+              data: allDays.map(d => d.has_data ? d.deficit : null),
+              backgroundColor: allDays.map(d => !d.has_data ? 'transparent' : d.deficit >= dailyTarget ? 'rgba(0,241,159,0.7)' : 'rgba(255,77,77,0.6)'),
+              borderColor: allDays.map(d => !d.has_data ? 'transparent' : d.deficit >= dailyTarget ? '#00F19F' : '#FF4D4D'),
+              borderWidth: 1,
+              borderRadius: 4,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => ctx.raw != null ? `${ctx.raw > 0 ? '-' : '+'}${Math.abs(ctx.raw)} cal` : 'No data',
+                },
+              },
+            },
+            scales: {
+              y: {
+                grid: { color: '#333' },
+                ticks: { color: '#888', callback: v => v > 0 ? `-${v}` : `+${Math.abs(v)}` },
+              },
+              x: { grid: { display: false }, ticks: { color: '#888' } },
+            },
+            animation: { duration: 500 },
+          },
+          plugins: [{
+            id: 'targetLine',
+            afterDraw(chart) {
+              if (!dailyTarget) return;
+              const yScale = chart.scales.y;
+              const y = yScale.getPixelForValue(dailyTarget);
+              const ctx = chart.ctx;
+              ctx.save();
+              ctx.strokeStyle = '#FFD600';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([6, 4]);
+              ctx.beginPath();
+              ctx.moveTo(chart.chartArea.left, y);
+              ctx.lineTo(chart.chartArea.right, y);
+              ctx.stroke();
+              ctx.fillStyle = '#FFD600';
+              ctx.font = '10px monospace';
+              ctx.fillText(`Target: -${dailyTarget}/day`, chart.chartArea.right - 110, y - 6);
+              ctx.restore();
+            },
+          }],
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [summary]);
+      return <div style={{ height: 220 }}><canvas ref={canvasRef}></canvas></div>;
+    }
+
     function NutritionTab({ profile, briefing }) {
       const [logs, setLogs] = useState([]);
       const [calories, setCalories] = useState('');
       const [protein, setProtein] = useState('');
       const [notes, setNotes] = useState('');
       const [loading, setLoading] = useState(false);
+      const [weeklySummary, setWeeklySummary] = useState(null);
 
-      useEffect(() => {
+      const loadData = useCallback(() => {
         api('/api/nutrition').then(setLogs).catch(console.error);
+        const ld = getLocalDateString();
+        api(`/api/nutrition/weekly-summary?local_date=${ld}`).then(r => { if (!r.error) setWeeklySummary(r); }).catch(() => {});
       }, []);
+
+      useEffect(() => { loadData(); }, [loadData]);
 
       // Use briefing's workout-based budget if available, else fallback
       const nt = briefing?.nutrition_target;
@@ -997,14 +1072,16 @@
             body: JSON.stringify({ calories: parseInt(calories), protein_grams: parseInt(protein), notes: notes || undefined, date: getLocalDateString() }),
           });
           setCalories(''); setProtein(''); setNotes('');
-          api('/api/nutrition').then(setLogs).catch(console.error);
+          loadData();
         } catch (e) { console.error(e); }
         setLoading(false);
       };
 
       const deleteEntry = async (id) => {
         await api(`/api/nutrition/${id}`, { method: 'DELETE' });
-        setLogs(logs.filter(l => l.id !== id));
+        setLogs(prev => prev.filter(l => l.id !== id));
+        const ld = getLocalDateString();
+        api(`/api/nutrition/weekly-summary?local_date=${ld}`).then(r => { if (!r.error) setWeeklySummary(r); }).catch(() => {});
       };
 
       return (
@@ -1034,6 +1111,57 @@
               {loading ? <span className="spinner"></span> : 'Log'}
             </button>
           </div>
+
+          {/* Weekly Deficit Target */}
+          {weeklySummary && weeklySummary.deficit_target && (() => {
+            const dt = weeklySummary.deficit_target;
+            const wa = weeklySummary.weekly_deficit_actual || 0;
+            const wt = weeklySummary.weekly_deficit_target || 0;
+            const wr = weeklySummary.weekly_deficit_remaining;
+            const pct = wt > 0 ? Math.min(Math.round(wa / wt * 100), 100) : 0;
+            const onTrack = wt > 0 && pct >= ((new Date().getDay() || 7) / 7 * 100 - 15);
+            return (
+              <div className="card" style={{ padding: '16px 20px' }}>
+                <div style={{ fontSize: 11, color: '#00F19F', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Weekly Deficit</div>
+                {dt.status === 'ok' ? (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center', marginBottom: 12 }}>
+                      <div>
+                        <div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>-{wt.toLocaleString()}</div>
+                        <div className="dim text-sm">Target</div>
+                      </div>
+                      <div>
+                        <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: onTrack ? '#00F19F' : '#FF4D4D' }}>-{wa.toLocaleString()}</div>
+                        <div className="dim text-sm">So Far</div>
+                      </div>
+                      <div>
+                        <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#FFD600' }}>{wr != null ? `-${wr.toLocaleString()}` : '--'}</div>
+                        <div className="dim text-sm">Remaining</div>
+                      </div>
+                    </div>
+                    <div className="progress-bar" style={{ marginBottom: 8 }}>
+                      <div className="progress-fill" style={{ width: pct + '%', background: onTrack ? '#00F19F' : '#FF4D4D' }}></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#666' }}>
+                      <span>{dt.lbs_to_lose} lbs to go &middot; {dt.weeks_remaining} weeks left</span>
+                      <span>{dt.lbs_per_week} lbs/week pace</span>
+                    </div>
+                    {dt.warning && <div style={{ fontSize: 12, color: '#FF8C00', marginTop: 8 }}>{dt.warning}</div>}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 13, color: dt.status === 'goal_reached' ? '#00F19F' : '#888' }}>{dt.message}</div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Weekly Deficit Bar Chart */}
+          {weeklySummary && weeklySummary.days && weeklySummary.days.some(d => d.has_data) && (
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <div style={{ fontSize: 11, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Daily Deficits This Week</div>
+              <WeeklyDeficitChart summary={weeklySummary} />
+            </div>
+          )}
 
           {targetCals && (
             <>
@@ -1169,14 +1297,51 @@
 
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-header"><h2>RECENT ENTRIES</h2></div>
-            {logs.slice(0, 14).map(l => (
-              <div key={l.id} className="metric-row">
-                <span className="metric-label">{l.date}</span>
-                <span className="mono" style={{ fontSize: 13 }}>{l.calories} cal / {l.protein_grams}g protein</span>
-                <button className="btn-sm btn-outline" onClick={() => deleteEntry(l.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
-              </div>
-            ))}
-            {logs.length === 0 && <div className="dim">No entries yet</div>}
+            {(() => {
+              // Group logs by date
+              const grouped = {};
+              logs.slice(0, 30).forEach(l => {
+                if (!grouped[l.date]) grouped[l.date] = [];
+                grouped[l.date].push(l);
+              });
+              const dates = Object.keys(grouped).sort().reverse().slice(0, 10);
+              // Build deficit lookup from weekly summary
+              const deficitByDate = {};
+              if (weeklySummary?.days) {
+                weeklySummary.days.forEach(d => { if (d.has_data) deficitByDate[d.date] = d; });
+              }
+              return dates.length === 0 ? (
+                <div className="dim">No entries yet</div>
+              ) : dates.map(d => {
+                const entries = grouped[d];
+                const totalCal = entries.reduce((s, e) => s + e.calories, 0);
+                const totalProt = entries.reduce((s, e) => s + e.protein_grams, 0);
+                const ds = deficitByDate[d];
+                const deficit = ds ? ds.deficit : null;
+                const dayLabel = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                return (
+                  <div key={d} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #333' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#ccc' }}>{dayLabel}</span>
+                      <span className="mono" style={{ fontSize: 12 }}>
+                        {totalCal.toLocaleString()} cal &middot; {totalProt}g protein
+                        {deficit != null && (
+                          <span style={{ marginLeft: 8, color: deficit >= 0 ? '#00F19F' : '#FF4D4D' }}>
+                            {deficit >= 0 ? `\u2212${deficit}` : `+${Math.abs(deficit)}`} cal
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {entries.map(l => (
+                      <div key={l.id} className="metric-row" style={{ paddingLeft: 12 }}>
+                        <span className="mono dim" style={{ fontSize: 12 }}>{l.calories} cal / {l.protein_grams}g{l.notes ? ` — ${l.notes}` : ''}</span>
+                        <button className="btn-sm btn-outline" onClick={() => deleteEntry(l.id)} style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11, color: '#FF4D4D', borderColor: '#FF4D4D40' }}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </>
       );

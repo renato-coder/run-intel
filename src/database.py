@@ -160,6 +160,7 @@ class Workout(_SerializableMixin, Base):
     sport_name = Column(String(50), nullable=False)
     sport_id = Column(Integer)
     strain = Column(Float)
+    kilojoule = Column(Float)
     duration_min = Column(Float)
     whoop_id = Column(String(50), unique=True)
     created_at = Column(DateTime, server_default=sa_func.now())
@@ -219,10 +220,12 @@ def _run_migrations(eng):
             sport_name VARCHAR(50) NOT NULL,
             sport_id INTEGER,
             strain FLOAT,
+            kilojoule FLOAT,
             duration_min FLOAT,
             whoop_id VARCHAR(50) UNIQUE,
             created_at TIMESTAMP DEFAULT NOW()
         )""",
+        "ALTER TABLE workouts ADD COLUMN IF NOT EXISTS kilojoule FLOAT",
     ]
     constraints = [
         "ALTER TABLE user_profile ADD CONSTRAINT ck_profile_cal_target CHECK (goal_calorie_target >= 800 AND goal_calorie_target <= 10000)",

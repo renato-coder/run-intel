@@ -146,7 +146,7 @@ def generate_weekly_plan(
         if dow == 0:
             # Monday — Lift + Easy Run
             lift = LIFT_SCHEDULE.get(dow, "upper")
-            mon_miles = min(easy_per_day, 3) if not cutback else 2
+            mon_miles = 3  # Always 3mi on Monday (lift day caps the load already)
             days.append(_day_dict(d, day_label, "lift_easy",
                 f"{lift.title()} + Easy Run",
                 [
